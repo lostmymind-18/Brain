@@ -35,6 +35,7 @@ _NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 _NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 _NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "bookmind123")
 _CHROMA_DIR = "data/chroma"
+_LLM_BASE_URL = os.getenv("LLM_BASE_URL")
 
 
 def main() -> None:
@@ -47,6 +48,7 @@ def main() -> None:
     parser.add_argument("--label", default=None, help="Human-readable config label for the report")
     parser.add_argument("--eval-provider", default="openai", help="LLM provider for the evaluator judge")
     parser.add_argument("--eval-model", default="gpt-4o-mini", help="LLM model for the evaluator judge")
+    parser.add_argument("--base-url", default=_LLM_BASE_URL, help="Custom API base URL (e.g. http://localhost:11434/v1 for Ollama)")
     args = parser.parse_args()
 
     q_path = Path(args.questions)
@@ -68,6 +70,7 @@ def main() -> None:
         model=args.model,
         strategy=args.strategy,
         label=label,
+        base_url=args.base_url,
     )
 
     vs = VectorStore(persist_dir=_CHROMA_DIR, collection_name=f"book_{args.book_id}")

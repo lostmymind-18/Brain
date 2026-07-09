@@ -34,8 +34,9 @@ class RunConfig:
     """One evaluation configuration to benchmark."""
     provider: str
     model: str
-    strategy: str   # "react" | "plan-execute" | "reflexion" | "auto"
-    label: str      # human-readable column header in the report
+    strategy: str           # "react" | "plan-execute" | "reflexion" | "auto"
+    label: str              # human-readable column header in the report
+    base_url: str | None = None  # custom API base for Ollama/LM Studio
 
 
 @dataclass
@@ -244,7 +245,10 @@ class EvalRunner:
         from bookmind_tutor.llm import create_client
         from bookmind_tutor.tutor.qa_agent import QAAgent
 
-        llm_client = create_client(provider=config.provider, model=config.model)
+        kwargs = {}
+        if config.base_url and config.provider == "openai":
+            kwargs["base_url"] = config.base_url
+        llm_client = create_client(provider=config.provider, model=config.model, **kwargs)
         retriever = GraphRAGRetriever(
             vector_store=self._vector_store,
             graph_store=self._graph_store,

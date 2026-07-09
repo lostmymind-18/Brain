@@ -69,6 +69,7 @@ _NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "bookmind123")
 
 _LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
 _LLM_MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
+_LLM_BASE_URL = os.getenv("LLM_BASE_URL")  # e.g. http://localhost:11434/v1 for Ollama
 
 _DATA_ROOT = Path("data")
 _CHROMA_DIR = str(_DATA_ROOT / "chroma")
@@ -179,9 +180,13 @@ def _init_state() -> None:
             st.session_state[key] = val
 
     if "llm_client" not in st.session_state:
+        kwargs = {}
+        if _LLM_BASE_URL and _LLM_PROVIDER == "openai":
+            kwargs["base_url"] = _LLM_BASE_URL
         st.session_state.llm_client = create_client(
             provider=_LLM_PROVIDER,
             model=_LLM_MODEL,
+            **kwargs,
         )
         st.session_state.llm_provider = _LLM_PROVIDER
 

@@ -49,8 +49,13 @@ class OpenAIClient(LLMClient):
         model: str = "gpt-4o-mini",
         api_key: str | None = None,
         base_url: str | None = None,
+        stream_usage: bool = True,
     ) -> None:
         self._model = model
+        # stream_usage=False for providers that don't support stream_options
+        # (Ollama, LM Studio). The factory sets this automatically when
+        # base_url is provided; callers can also set it explicitly.
+        self._stream_usage = stream_usage
         kwargs: dict[str, Any] = {}
         if api_key:
             kwargs["api_key"] = api_key
@@ -113,8 +118,9 @@ class OpenAIClient(LLMClient):
             max_tokens=max_tokens,
             messages=oai_messages,
             stream=True,
-            stream_options={"include_usage": True},
         )
+        if self._stream_usage:
+            kwargs["stream_options"] = {"include_usage": True}
         if tools:
             kwargs["tools"] = tools
 
@@ -131,7 +137,6 @@ class OpenAIClient(LLMClient):
                         "prompt_tokens": chunk.usage.prompt_tokens,
                         "completion_tokens": chunk.usage.completion_tokens,
                     }
-                    continue
 
                 choice = chunk.choices[0] if chunk.choices else None
                 if not choice:

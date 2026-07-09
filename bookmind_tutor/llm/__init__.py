@@ -27,10 +27,16 @@ def create_client(
     """
     if provider == "anthropic":
         from bookmind_tutor.llm.anthropic_client import AnthropicClient
-        return AnthropicClient(model=model, api_key=api_key, **kwargs)
+        # AnthropicClient only accepts model and api_key — no extra kwargs.
+        return AnthropicClient(model=model, api_key=api_key)
 
     if provider == "openai":
         from bookmind_tutor.llm.openai_client import OpenAIClient
+        # Providers with a custom base_url (Ollama, LM Studio, etc.) don't
+        # support stream_options, so default stream_usage to False unless
+        # the caller has already set it explicitly.
+        if "base_url" in kwargs and "stream_usage" not in kwargs:
+            kwargs["stream_usage"] = False
         return OpenAIClient(model=model, api_key=api_key, **kwargs)
 
     raise ValueError(
