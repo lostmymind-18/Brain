@@ -116,7 +116,8 @@ def configure_structlog(
     shared_processors = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
+        # add_logger_name requires logging.Logger.name and is incompatible
+        # with PrintLoggerFactory — omit it when not using stdlib integration.
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
     ]
