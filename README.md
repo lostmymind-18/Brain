@@ -15,6 +15,8 @@ Built as a 13-week learning project to master Agent Engineering, Knowledge Graph
 - **GraphRAG retrieval** — Vector search enriched with knowledge graph traversal to surface passages that keyword search misses.
 - **Streaming UI** — Token-by-token streaming in Streamlit with visible reasoning trace, sources, and KG suggestions per turn.
 - **Evaluation framework** — LLM-as-judge scoring (factual accuracy, citation quality, depth) with JSONL interaction log that doubles as DPO training data.
+- **Safety/guardrails** — Input guardrails (length limit, prompt injection regex, LLM-based topicality check) and output guardrails (length monitoring). Fail-open design: guard failures never block legitimate questions.
+- **Observability** — OpenTelemetry distributed tracing (full span hierarchy: `qa.turn` → `agent.react_turn` → `gen_ai.complete` → `tool.execute`) with GenAI Semantic Convention attributes. Structured logging via structlog. Exports to console or OTLP/gRPC (Jaeger, Grafana Tempo).
 - **Multi-provider** — Switch between Anthropic and OpenAI via a single env var. Canonical OpenAI message format internally; adapters convert at the wire.
 
 ---
@@ -33,7 +35,9 @@ bookmind_tutor/
 ├── knowledge_graph/    # Entity extraction, Neo4j store, GraphRAG retriever
 ├── llm/                # Provider abstraction: AnthropicClient, OpenAIClient
 ├── tutor/              # QAAgent (student modeling + pedagogical hints), Streamlit UI
-└── evaluation/         # InteractionLogger, AnswerEvaluator (LLM-as-judge), EvalRunner
+├── evaluation/         # InteractionLogger, AnswerEvaluator (LLM-as-judge), EvalRunner
+├── safety/             # GuardrailsLayer, LengthGuard, PromptInjectionGuard, TopicalityGuard
+└── observability/      # OTel TracerProvider setup, span attribute constants, structlog config
 ```
 
 **Key design decisions:**
@@ -55,7 +59,9 @@ bookmind_tutor/
 | Knowledge graph | Neo4j 5 |
 | LLM providers | Anthropic / OpenAI (configurable) |
 | Frontend | Streamlit |
-| Tests | pytest — 278 tests |
+| Structured logging | structlog |
+| Distributed tracing | OpenTelemetry (OTLP/gRPC → Jaeger / Grafana Tempo) |
+| Tests | pytest — 321 tests |
 
 ---
 
@@ -114,9 +120,11 @@ Open [http://localhost:8501](http://localhost:8501), upload a PDF, and start cha
 ## Running tests
 
 ```bash
-pytest                    # all 278 tests
-pytest tests/agents/      # agent harness + strategies
-pytest tests/evaluation/  # eval framework
+pytest                      # all 321 tests
+pytest tests/agents/        # agent harness + strategies
+pytest tests/evaluation/    # eval framework
+pytest tests/safety/        # guardrails
+pytest tests/observability/ # OTel tracing
 ```
 
 ---
@@ -151,7 +159,7 @@ Output: markdown table with per-question scores + JSON report saved to `data/eva
 | 4 | Knowledge Graph + GraphRAG | Done |
 | 5-6 | Q&A Agent + Streamlit UI | Done |
 | 7 | Evaluation framework | Done |
-| 8-9 | Safety/guardrails + Observability (OpenTelemetry) | In progress |
+| 8-9 | Safety/guardrails + Observability (OpenTelemetry) | Done |
 | 10-11 | DPO fine-tuning (proof-of-concept) | Planned |
 | 12-13 | Integration, polish, portfolio write-up | Planned |
 
