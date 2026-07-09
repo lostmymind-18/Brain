@@ -530,3 +530,70 @@ Per `plans/week7_eval_framework.md`:
 - `data/eval_questions.example.json`: starter template for writing benchmark questions per book.
 
 278 tests pass total.
+
+---
+
+## Week 8-9 - Safety/Guardrails + Observability
+
+Per `plans/safety_guardrails.md` and `plans/observability.md`.
+
+**Safety/Guardrails - complete**
+
+`bookmind_tutor/safety/` package:
+
+- `models.py`: `Severity` (BLOCK/WARN/LOG), `ViolationType` (INPUT_TOO_LONG, PROMPT_INJECTION, OFF_TOPIC, OUTPUT_TOO_LONG), `GuardContext` (book_name, book_id, session_id), `GuardResult` (passed, violation_type, severity, user_message, internal_detail).
+- `input_guards.py`:
+  - `LengthGuard(max_chars=2000)`: BLOCK if input exceeds character limit. Returns user-facing count in the message.
+  - `PromptInjectionGuard`: regex patterns across 4 attack categories - ROLE_OVERRIDE ("ignore all instructions", "act as", "pretend to be"), SYSTEM_LEAK ("repeat your system prompt"), JAILBREAK ("DAN mode", "developer mode"), DELIMITER_INJ (`</system>`, `<|im_start|>`, `[INST]`). BLOCK severity. Logs matched category for monitoring.
+  - `TopicalityGuard(llm_client, enabled=True)`: single cheap LLM call (`max_tokens=5`) asking yes/no whether the question relates to the loaded book. WARN severity (never BLOCK). Fails OPEN on any LLM error - never punishes user for guard infra failure. Input truncated to 500 chars for cost control.
+- `output_guards.py`: `OutputLengthGuard(max_chars=8000)`: WARN if response is unusually long (data-collection only - never blocks the answer).
+- `layer.py`: `GuardrailsLayer(input_guards, output_guards)` - runs guards in registration order. First BLOCK short-circuits (remaining guards skipped). WARN results are logged by the guard itself; layer continues. Returns `GuardResult(passed=True)` if all pass.
+- `__init__.py`: public re-exports for all types.
+
+Integration in `app.py`:
+- `GuardrailsLayer` initialized once in `_init_state()` with LengthGuard + PromptInjectionGuard + TopicalityGuard (input), OutputLengthGuard (output).
+- `_handle_question()`: input check runs before appending to history or calling LLM. BLOCK: renders user bubble + error in assistant bubble, then returns without saving to history. WARN: proceeds normally (logged only). Output check runs after streaming completes (WARN-only, side-effect logging).
+
+Tests:
+- `tests/safety/test_input_guards.py`: 21 tests (LengthGuard boundary cases, all 4 injection categories, TopicalityGuard mocked LLM - related/off-topic/disabled/no-book-name/fail-open/truncation).
+- `tests/safety/test_output_guards.py`: 5 tests (boundary conditions, WARN severity, internal_detail content).
+- `tests/safety/test_layer.py`: 8 tests (BLOCK short-circuits, WARN continues, context forwarded, no guards, output WARN passes through).
+
+**Observability (OTel + structlog) - complete**
+
+`bookmind_tutor/observability/` package:
+
+- `setup.py`:
+  - `configure_structlog(level, json_output)`: idempotent. Shared processors: contextvars merge, log level, logger name, ISO timestamp, stack info. Pretty output (ConsoleRenderer with colors) in dev; JSON lines in production (`LOG_FORMAT=json`). `LOG_LEVEL` env var respected.
+  - `configure_observability(service_name, export_to, otlp_endpoint)`: idempotent. Builds a `TracerProvider` with `service.name` resource attribute. `OTEL_EXPORT=console` (default) uses ConsoleSpanExporter. `OTEL_EXPORT=otlp` uses gRPC OTLP exporter (`opentelemetry-exporter-otlp-proto-grpc`) toward `OTEL_EXPORTER_OTLP_ENDPOINT` (default: localhost:4317). Falls back to console if OTLP package missing.
+  - `reset_for_testing()`: resets both idempotency flags AND OTel global state (`_TRACER_PROVIDER`, `_TRACER_PROVIDER_SET_ONCE._done`) so tests can install their own `InMemorySpanExporter`.
+- `tracing.py`:
+  - `get_tracer()`: returns global OTel tracer. No-op ProxyTracer if `configure_observability()` was never called - all span calls are safe no-ops in tests.
+  - `GenAIAttrs`: GenAI Semantic Convention constants (`gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.stop_reason`, `gen_ai.operation.name`).
+  - `AgentAttrs`: `agent.strategy`, `agent.step_num`, `agent.steps_taken`, `agent.total_llm_calls`.
+  - `ToolAttrs`: `tool.name`, `tool.input_summary`, `tool.result_chars`, `tool.is_error`.
+  - `QAAttrs`: `qa.book_id`, `qa.turn_count`, `qa.strategy_selected`.
+  - `set_error(span, exc)`: records exception + sets ERROR status code.
+
+LLM client instrumentation (Template Method pattern):
+- `llm/base.py`: added `provider` abstract property. Renamed `complete` → `_complete`, `stream` → `_stream`. New concrete `complete()` wraps `_complete()` with `gen_ai.complete` span (sets system, model, operation, input/output tokens, stop reason; calls `set_error` on exception). New concrete `stream()` wraps `_stream()` with `gen_ai.stream` span via `yield from` inside the `with` block - context stays open across yields; post-stream attributes set after `yield from` completes using `self.last_response`.
+- `llm/anthropic_client.py`: added `provider = "anthropic"`, renamed methods to `_complete`/`_stream`.
+- `llm/openai_client.py`: added `provider = "openai"`, renamed methods to `_complete`/`_stream`. Replaced `import logging` with `structlog`.
+
+Agent instrumentation:
+- `agents/harness.py`: replaced `import logging` with `structlog`. All log calls use keyword-argument style (`logger.info("event", key=val)`). `chat()` wrapped in `agent.react_turn` span (`agent.strategy=react`). Each iteration wrapped in `agent.react_step` span (`agent.step_num=N`). `agent.total_llm_calls` set on turn span at end.
+- `agents/executor.py`: replaced `import logging` with `structlog`. Each `_execute_one()` call wrapped in `tool.execute` span with `tool.name`, `tool.input_summary`, `tool.result_chars`, `tool.is_error`.
+- `tutor/qa_agent.py`: both `chat()` and `stream_chat()` wrapped in `qa.turn` span with `qa.turn_count` and `qa.strategy_selected` (set after router returns).
+
+Startup in `app.py`:
+- `configure_structlog()` and `configure_observability()` called at module level (before `import streamlit as st`) so all modules pick up the configured providers.
+
+Tests:
+- `tests/observability/test_tracing.py`: 9 tests using `InMemorySpanExporter` via `isolated_tracer` fixture (resets OTel state per test). Covers tracer creation, span capture, `set_error` exception recording, all 4 attribute constant classes, attribute value setting, nested span parent-child linking.
+
+Documentation:
+- `docs/local_observability.md`: Jaeger Docker setup, env var configuration, span hierarchy diagram, useful attributes table, Grafana LGTM stack instructions for production.
+
+`requirements.txt` additions: `structlog>=24.0.0`, `opentelemetry-api>=1.20.0`, `opentelemetry-sdk>=1.20.0`, `opentelemetry-exporter-otlp-proto-grpc>=1.20.0`.
+
+321 tests pass total.

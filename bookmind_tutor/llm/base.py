@@ -78,23 +78,37 @@ class LLMClient(ABC):
       {"type": "function", "function": {"name": "...", "description": "...", "parameters": {...}}}
 
     Adapters translate to/from the provider's native format internally.
+
+    Instrumentation — Template Method pattern:
+      Subclasses implement _complete() and _stream(). The public complete()
+      and stream() methods in this base class wrap them with OpenTelemetry
+      spans following the GenAI Semantic Conventions. This way every provider
+      gets traces for free without repeating instrumentation code.
     """
 
     @property
     @abstractmethod
     def model(self) -> str: ...
 
+    @property
     @abstractmethod
-    def complete(
+    def provider(self) -> str:
+        """Provider name: "anthropic" | "openai" (used in OTel spans)."""
+        ...
+
+    @abstractmethod
+    def _complete(
         self,
         messages: list[dict],
         system: str = "",
         tools: list[dict] | None = None,
         max_tokens: int = 4096,
-    ) -> CompletionResponse: ...
+    ) -> CompletionResponse:
+        """Provider-specific implementation of a blocking completion."""
+        ...
 
     @abstractmethod
-    def stream(
+    def _stream(
         self,
         messages: list[dict],
         system: str = "",
@@ -102,10 +116,10 @@ class LLMClient(ABC):
         max_tokens: int = 4096,
     ) -> Iterator[str]:
         """
-        Yield text tokens as they arrive.
+        Provider-specific streaming implementation.
 
-        After the iterator is exhausted, call last_response to get the full
-        CompletionResponse (stop_reason, tool_calls, usage, raw_message).
+        Must set self._last_response (or equivalent) before the generator
+        is exhausted so that last_response returns the full CompletionResponse.
         """
         ...
 
@@ -114,3 +128,60 @@ class LLMClient(ABC):
     def last_response(self) -> CompletionResponse | None:
         """CompletionResponse from the most recent stream() call, set after exhaustion."""
         ...
+
+    # ------------------------------------------------------------------
+    # Public API — wraps _complete/_stream with OTel instrumentation
+    # ------------------------------------------------------------------
+
+    def complete(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+    ) -> CompletionResponse:
+        """Blocking completion with an OTel span."""
+        from bookmind_tutor.observability.tracing import GenAIAttrs, get_tracer, set_error
+        tracer = get_tracer()
+        with tracer.start_as_current_span("gen_ai.complete") as span:
+            span.set_attribute(GenAIAttrs.SYSTEM, self.provider)
+            span.set_attribute(GenAIAttrs.REQUEST_MODEL, self.model)
+            span.set_attribute(GenAIAttrs.OPERATION, "complete")
+            try:
+                response = self._complete(messages, system, tools, max_tokens)
+                span.set_attribute(GenAIAttrs.INPUT_TOKENS, response.usage.input_tokens)
+                span.set_attribute(GenAIAttrs.OUTPUT_TOKENS, response.usage.output_tokens)
+                span.set_attribute(GenAIAttrs.STOP_REASON, response.stop_reason)
+                return response
+            except Exception as exc:
+                set_error(span, exc)
+                raise
+
+    def stream(
+        self,
+        messages: list[dict],
+        system: str = "",
+        tools: list[dict] | None = None,
+        max_tokens: int = 4096,
+    ) -> Iterator[str]:
+        """
+        Yield text tokens as they arrive, wrapped in an OTel span.
+
+        After the iterator is exhausted, last_response holds the full
+        CompletionResponse (stop_reason, tool_calls, usage, raw_message).
+        """
+        from bookmind_tutor.observability.tracing import GenAIAttrs, get_tracer, set_error
+        tracer = get_tracer()
+        with tracer.start_as_current_span("gen_ai.stream") as span:
+            span.set_attribute(GenAIAttrs.SYSTEM, self.provider)
+            span.set_attribute(GenAIAttrs.REQUEST_MODEL, self.model)
+            span.set_attribute(GenAIAttrs.OPERATION, "stream")
+            try:
+                yield from self._stream(messages, system, tools, max_tokens)
+                if self.last_response:
+                    span.set_attribute(GenAIAttrs.INPUT_TOKENS, self.last_response.usage.input_tokens)
+                    span.set_attribute(GenAIAttrs.OUTPUT_TOKENS, self.last_response.usage.output_tokens)
+                    span.set_attribute(GenAIAttrs.STOP_REASON, self.last_response.stop_reason)
+            except Exception as exc:
+                set_error(span, exc)
+                raise

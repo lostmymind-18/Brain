@@ -26,10 +26,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Configure observability before any other imports so all modules pick up the
+# tracer provider and structlog config set here.
+from bookmind_tutor.observability.setup import configure_observability, configure_structlog
+configure_structlog()
+configure_observability()
+
 import streamlit as st
 
 from bookmind_tutor.evaluation.logger import InteractionLogger, InteractionRecord
 from bookmind_tutor.llm import LLMAPIError, create_client
+from bookmind_tutor.safety import (
+    GuardContext,
+    GuardrailsLayer,
+    LengthGuard,
+    OutputLengthGuard,
+    PromptInjectionGuard,
+    Severity,
+    TopicalityGuard,
+)
 
 from bookmind_tutor.agents.harness import AgentHarness
 from bookmind_tutor.agents.strategies import (
@@ -184,6 +199,18 @@ def _init_state() -> None:
 
     if "interaction_logger" not in st.session_state:
         st.session_state.interaction_logger = InteractionLogger(_DATA_ROOT / "interactions.jsonl")
+
+    if "guardrails" not in st.session_state:
+        # TopicalityGuard makes a cheap LLM call (max_tokens=5) to check relevance.
+        # It fails open, so a guard LLM failure never blocks a legitimate question.
+        st.session_state.guardrails = GuardrailsLayer(
+            input_guards=[
+                LengthGuard(),
+                PromptInjectionGuard(),
+                TopicalityGuard(llm_client=st.session_state.llm_client),
+            ],
+            output_guards=[OutputLengthGuard()],
+        )
 
 
 def _restore_from_disk() -> None:
@@ -396,6 +423,20 @@ def _chat_page() -> None:
 
 
 def _handle_question(question: str) -> None:
+    # Run input guardrails before touching history or calling the LLM.
+    # BLOCK: show error to user and abort. WARN: logged internally, proceed normally.
+    ctx = GuardContext(
+        book_name=st.session_state.book_names.get(st.session_state.current_book_id, ""),
+        book_id=st.session_state.current_book_id or "",
+    )
+    guard_result = st.session_state.guardrails.check_input(question, ctx)
+    if not guard_result.passed and guard_result.severity == Severity.BLOCK:
+        with st.chat_message("user"):
+            st.markdown(question)
+        with st.chat_message("assistant"):
+            st.error(guard_result.user_message)
+        return
+
     messages = _current_messages()
     messages.append({"role": "user", "content": question})
 
@@ -428,6 +469,9 @@ def _handle_question(question: str) -> None:
             return
 
         trace = st.session_state.qa_agent.last_trace
+
+        # Output guardrail (WARN-only: logs oversized responses, never blocks).
+        st.session_state.guardrails.check_output(answer, ctx)
 
         with st.spinner("Extracting concepts..."):
             # KG suggestions and source display run after streaming completes.

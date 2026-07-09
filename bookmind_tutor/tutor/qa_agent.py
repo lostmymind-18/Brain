@@ -28,6 +28,7 @@ from bookmind_tutor.agents.harness import AgentHarness, _DEFAULT_SYSTEM
 from bookmind_tutor.agents.memory import ConversationMemory
 from bookmind_tutor.agents.models import ReasoningTrace
 from bookmind_tutor.agents.strategies.router import StrategyRouter
+from bookmind_tutor.observability.tracing import QAAttrs, get_tracer
 
 # ---------------------------------------------------------------------------
 # Level detection heuristics
@@ -137,7 +138,12 @@ class QAAgent:
         """
         self._turn_count += 1
         self._harness.system_prompt = self._build_system_prompt(question)
-        answer = self._router.chat(question, memory=self._memory, force_strategy=force_strategy)
+        tracer = get_tracer()
+        with tracer.start_as_current_span("qa.turn") as span:
+            span.set_attribute(QAAttrs.TURN_COUNT, self._turn_count)
+            answer = self._router.chat(question, memory=self._memory, force_strategy=force_strategy)
+            if self._router.last_trace:
+                span.set_attribute(QAAttrs.STRATEGY, self._router.last_trace.strategy_name)
         return answer
 
     def stream_chat(
@@ -149,9 +155,14 @@ class QAAgent:
         """
         self._turn_count += 1
         self._harness.system_prompt = self._build_system_prompt(question)
-        yield from self._router.stream_chat(
-            question, memory=self._memory, force_strategy=force_strategy
-        )
+        tracer = get_tracer()
+        with tracer.start_as_current_span("qa.turn") as span:
+            span.set_attribute(QAAttrs.TURN_COUNT, self._turn_count)
+            yield from self._router.stream_chat(
+                question, memory=self._memory, force_strategy=force_strategy
+            )
+            if self._router.last_trace:
+                span.set_attribute(QAAttrs.STRATEGY, self._router.last_trace.strategy_name)
 
     @property
     def last_trace(self) -> ReasoningTrace | None:

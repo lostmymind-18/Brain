@@ -64,10 +64,14 @@ class OpenAIClient(LLMClient):
         return self._model
 
     @property
+    def provider(self) -> str:
+        return "openai"
+
+    @property
     def last_response(self) -> CompletionResponse | None:
         return self._last_response
 
-    def complete(
+    def _complete(
         self,
         messages: list[dict],
         system: str = "",
@@ -95,7 +99,7 @@ class OpenAIClient(LLMClient):
 
         return self._normalize_response(response)
 
-    def stream(
+    def _stream(
         self,
         messages: list[dict],
         system: str = "",

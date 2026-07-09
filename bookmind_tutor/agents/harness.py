@@ -16,17 +16,19 @@ Intentional design choices:
 """
 from __future__ import annotations
 
-import logging
 import threading
 from collections.abc import Iterator
+
+import structlog
 
 from bookmind_tutor.agents.executor import ToolExecutor
 from bookmind_tutor.agents.memory import ConversationMemory
 from bookmind_tutor.agents.models import ToolCallResult
 from bookmind_tutor.agents.tools.base import Tool
 from bookmind_tutor.llm.base import LLMAPIError, LLMClient
+from bookmind_tutor.observability.tracing import AgentAttrs, get_tracer
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 _DEFAULT_SYSTEM = (
     "You are BookMind Tutor, an AI assistant that helps users understand a specific book "
@@ -142,63 +144,71 @@ class AgentHarness:
 
         final_text = ""
         response = None
+        tracer = get_tracer()
 
-        for step in range(1, self._max_iterations + 1):
-            logger.info("ReAct step %d/%d", step, self._max_iterations)
+        with tracer.start_as_current_span("agent.react_turn") as turn_span:
+            turn_span.set_attribute(AgentAttrs.STRATEGY, "react")
 
-            response = self._client.complete(
-                messages=memory.messages(),
-                system=self._system,
-                tools=tool_dicts if tool_dicts else None,
-                max_tokens=self._max_tokens,
-            )
-            with self._call_lock:
-                self._total_llm_calls += 1
+            for step in range(1, self._max_iterations + 1):
+                logger.info("react_step", step=step, max_steps=self._max_iterations)
 
-            in_tok = response.usage.input_tokens
-            out_tok = response.usage.output_tokens
-            logger.debug(
-                "Response: stop_reason=%s, input_tokens=%d, output_tokens=%d",
-                response.stop_reason, in_tok, out_tok,
-            )
+                with tracer.start_as_current_span("agent.react_step") as step_span:
+                    step_span.set_attribute(AgentAttrs.STEP_NUM, step)
 
-            if response.stop_reason == "end_turn":
-                final_text = response.text
-                self._last_steps.append(
-                    f"[{step}] end_turn — {out_tok} out / {in_tok} in tokens"
-                )
-                logger.info("ReAct done at step %d — final answer (%d chars)", step, len(final_text))
-                break
+                    response = self._client.complete(
+                        messages=memory.messages(),
+                        system=self._system,
+                        tools=tool_dicts if tool_dicts else None,
+                        max_tokens=self._max_tokens,
+                    )
+                    with self._call_lock:
+                        self._total_llm_calls += 1
 
-            if response.stop_reason == "tool_use":
-                for tc in response.tool_calls:
-                    query = _tool_input_summary(tc.input)
-                    self._last_steps.append(f"[{step}] {tc.name}({query})")
-                memory.add_assistant(response.raw_message)
-                results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
-                for tc, r in zip(response.tool_calls, results):
-                    if tc.name == "book_search" and not r.is_error:
-                        self._last_retrieved_chunks.append(r.content)
-                    status = "error" if r.is_error else f"{len(r.content)} chars"
-                    self._last_steps.append(f"[{step}]  → {status}")
-                memory.add_tool_results(results)
-                _log_tool_results(results)
-                continue
+                    in_tok = response.usage.input_tokens
+                    out_tok = response.usage.output_tokens
+                    logger.debug(
+                        "llm_response",
+                        stop_reason=response.stop_reason,
+                        input_tokens=in_tok,
+                        output_tokens=out_tok,
+                    )
 
-            # Unexpected stop reason
-            logger.warning("Unexpected stop_reason: %s", response.stop_reason)
-            self._last_steps.append(f"[{step}] unexpected stop: {response.stop_reason}")
-            final_text = response.text
-            break
+                    if response.stop_reason == "end_turn":
+                        final_text = response.text
+                        self._last_steps.append(
+                            f"[{step}] end_turn — {out_tok} out / {in_tok} in tokens"
+                        )
+                        logger.info("react_done", step=step, answer_chars=len(final_text))
+                        break
 
-        else:
-            # Loop exhausted without end_turn
-            logger.warning("Max iterations (%d) reached.", self._max_iterations)
-            self._last_steps.append(f"[{self._max_iterations}] max iterations reached")
-            final_text = (response.text if response else "") + "\n\n" + _MAX_ITERATIONS_FALLBACK
+                    if response.stop_reason == "tool_use":
+                        for tc in response.tool_calls:
+                            query = _tool_input_summary(tc.input)
+                            self._last_steps.append(f"[{step}] {tc.name}({query})")
+                        memory.add_assistant(response.raw_message)
+                        results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
+                        for tc, r in zip(response.tool_calls, results):
+                            if tc.name == "book_search" and not r.is_error:
+                                self._last_retrieved_chunks.append(r.content)
+                            status = "error" if r.is_error else f"{len(r.content)} chars"
+                            self._last_steps.append(f"[{step}]  → {status}")
+                        memory.add_tool_results(results)
+                        _log_tool_results(results)
+                        continue
+
+                    logger.warning("unexpected_stop_reason", stop_reason=response.stop_reason)
+                    self._last_steps.append(f"[{step}] unexpected stop: {response.stop_reason}")
+                    final_text = response.text
+                    break
+
+            else:
+                logger.warning("max_iterations_reached", max_iterations=self._max_iterations)
+                self._last_steps.append(f"[{self._max_iterations}] max iterations reached")
+                final_text = (response.text if response else "") + "\n\n" + _MAX_ITERATIONS_FALLBACK
+
+            turn_span.set_attribute(AgentAttrs.TOTAL_LLM_CALLS, self._total_llm_calls)
 
         if not own_memory:
-            # Persist the final assistant turn in the caller's memory
             memory.add_assistant({"role": "assistant", "content": final_text})
 
         return final_text
@@ -224,66 +234,76 @@ class AgentHarness:
         memory.add_user(user_message)
         tool_dicts = [t.spec.to_dict() for t in self._tools]
         final_text_parts: list[str] = []
+        tracer = get_tracer()
 
-        for step in range(1, self._max_iterations + 1):
-            logger.info("ReAct step %d/%d — streaming", step, self._max_iterations)
-            step_text: list[str] = []
+        with tracer.start_as_current_span("agent.react_turn") as turn_span:
+            turn_span.set_attribute(AgentAttrs.STRATEGY, "react")
 
-            for token in self._client.stream(
-                messages=memory.messages(),
-                system=self._system,
-                tools=tool_dicts if tool_dicts else None,
-                max_tokens=self._max_tokens,
-            ):
-                step_text.append(token)
-                yield token
+            for step in range(1, self._max_iterations + 1):
+                logger.info("react_step_stream", step=step, max_steps=self._max_iterations)
+                step_text: list[str] = []
 
-            response = self._client.last_response
-            if response is None:
-                # Should never happen — last_response is always set after stream exhaustion
-                logger.error("stream() exhausted but last_response is None")
-                break
+                with tracer.start_as_current_span("agent.react_step") as step_span:
+                    step_span.set_attribute(AgentAttrs.STEP_NUM, step)
 
-            with self._call_lock:
-                self._total_llm_calls += 1
+                    for token in self._client.stream(
+                        messages=memory.messages(),
+                        system=self._system,
+                        tools=tool_dicts if tool_dicts else None,
+                        max_tokens=self._max_tokens,
+                    ):
+                        step_text.append(token)
+                        yield token
 
-            in_tok = response.usage.input_tokens
-            out_tok = response.usage.output_tokens
-            logger.debug(
-                "Response: stop_reason=%s input_tokens=%d output_tokens=%d",
-                response.stop_reason, in_tok, out_tok,
-            )
+                    response = self._client.last_response
+                    if response is None:
+                        logger.error("stream_no_last_response")
+                        break
 
-            if response.stop_reason == "end_turn":
-                final_text_parts = step_text
-                self._last_steps.append(
-                    f"[{step}] end_turn — {out_tok} out / {in_tok} in tokens"
-                )
-                logger.info("ReAct done at step %d", step)
-                break
+                    with self._call_lock:
+                        self._total_llm_calls += 1
 
-            if response.stop_reason == "tool_use":
-                for tc in response.tool_calls:
-                    query = _tool_input_summary(tc.input)
-                    self._last_steps.append(f"[{step}] {tc.name}({query})")
-                memory.add_assistant(response.raw_message)
-                results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
-                for tc, r in zip(response.tool_calls, results):
-                    if tc.name == "book_search" and not r.is_error:
-                        self._last_retrieved_chunks.append(r.content)
-                    status = "error" if r.is_error else f"{len(r.content)} chars"
-                    self._last_steps.append(f"[{step}]  → {status}")
-                memory.add_tool_results(results)
-                _log_tool_results(results)
-                continue
+                    in_tok = response.usage.input_tokens
+                    out_tok = response.usage.output_tokens
+                    logger.debug(
+                        "llm_response",
+                        stop_reason=response.stop_reason,
+                        input_tokens=in_tok,
+                        output_tokens=out_tok,
+                    )
 
-            logger.warning("Unexpected stop_reason: %s", response.stop_reason)
-            self._last_steps.append(f"[{step}] unexpected stop: {response.stop_reason}")
-            final_text_parts = step_text
-            break
-        else:
-            logger.warning("Max iterations (%d) reached.", self._max_iterations)
-            self._last_steps.append(f"[{self._max_iterations}] max iterations reached")
+                    if response.stop_reason == "end_turn":
+                        final_text_parts = step_text
+                        self._last_steps.append(
+                            f"[{step}] end_turn — {out_tok} out / {in_tok} in tokens"
+                        )
+                        logger.info("react_done", step=step)
+                        break
+
+                    if response.stop_reason == "tool_use":
+                        for tc in response.tool_calls:
+                            query = _tool_input_summary(tc.input)
+                            self._last_steps.append(f"[{step}] {tc.name}({query})")
+                        memory.add_assistant(response.raw_message)
+                        results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
+                        for tc, r in zip(response.tool_calls, results):
+                            if tc.name == "book_search" and not r.is_error:
+                                self._last_retrieved_chunks.append(r.content)
+                            status = "error" if r.is_error else f"{len(r.content)} chars"
+                            self._last_steps.append(f"[{step}]  → {status}")
+                        memory.add_tool_results(results)
+                        _log_tool_results(results)
+                        continue
+
+                    logger.warning("unexpected_stop_reason", stop_reason=response.stop_reason)
+                    self._last_steps.append(f"[{step}] unexpected stop: {response.stop_reason}")
+                    final_text_parts = step_text
+                    break
+            else:
+                logger.warning("max_iterations_reached", max_iterations=self._max_iterations)
+                self._last_steps.append(f"[{self._max_iterations}] max iterations reached")
+
+            turn_span.set_attribute(AgentAttrs.TOTAL_LLM_CALLS, self._total_llm_calls)
 
         if not own_memory:
             final_text = "".join(final_text_parts).strip()
@@ -306,6 +326,9 @@ def _tool_input_summary(input_dict: dict) -> str:
 
 def _log_tool_results(results: list[ToolCallResult]) -> None:
     for r in results:
-        status = "ERROR" if r.is_error else "OK"
-        preview = r.content[:80].replace("\n", " ")
-        logger.info("  Tool result [%s]: %s → %s", r.tool_use_id[:8], status, preview)
+        logger.info(
+            "tool_result",
+            tool_use_id=r.tool_use_id[:8],
+            status="ERROR" if r.is_error else "OK",
+            preview=r.content[:80].replace("\n", " "),
+        )
