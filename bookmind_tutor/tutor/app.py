@@ -28,9 +28,10 @@ load_dotenv()
 
 # Configure observability before any other imports so all modules pick up the
 # tracer provider and structlog config set here.
-from bookmind_tutor.observability.setup import configure_observability, configure_structlog
+from bookmind_tutor.observability.setup import configure_langfuse, configure_observability, configure_structlog
 configure_structlog()
 configure_observability()
+configure_langfuse()
 
 import streamlit as st
 

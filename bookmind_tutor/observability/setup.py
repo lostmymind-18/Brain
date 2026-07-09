@@ -141,6 +141,12 @@ def configure_structlog(
     )
 
 
+def configure_langfuse() -> None:
+    """Thin re-export so callers can import everything from one place."""
+    from bookmind_tutor.observability.langfuse_tracing import configure_langfuse as _cfg
+    _cfg()
+
+
 def reset_for_testing() -> None:
     """
     Reset setup flags and OTel global state so tests can reconfigure from scratch.

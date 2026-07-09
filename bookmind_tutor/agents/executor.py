@@ -47,6 +47,7 @@ class ToolExecutor:
         return [self._execute_one(tc) for tc in tool_calls]
 
     def _execute_one(self, tc: ToolCallRequest) -> ToolCallResult:
+        from bookmind_tutor.observability.langfuse_tracing import langfuse_observation
         args_summary = json.dumps(tc.input)[:120]
         logger.info("tool_call", tool=tc.name, args=args_summary)
 
@@ -59,39 +60,48 @@ class ToolExecutor:
         delay = self._retry_delay
         tracer = get_tracer()
 
-        for attempt in range(1, self._max_retries + 1):
-            with tracer.start_as_current_span("tool.execute") as span:
-                span.set_attribute(ToolAttrs.NAME, tc.name)
-                span.set_attribute(ToolAttrs.INPUT_SUMMARY, args_summary[:100])
-                try:
-                    result_text = tool.execute(**tc.input)
-                    span.set_attribute(ToolAttrs.RESULT_CHARS, len(result_text))
-                    span.set_attribute(ToolAttrs.IS_ERROR, False)
-                    logger.info("tool_ok", tool=tc.name, result_chars=len(result_text))
-                    return ToolCallResult(tool_use_id=tc.id, content=result_text)
+        with langfuse_observation(
+            tc.name, as_type="tool", input=tc.input,
+        ) as lf_tool:
+            for attempt in range(1, self._max_retries + 1):
+                with tracer.start_as_current_span("tool.execute") as span:
+                    span.set_attribute(ToolAttrs.NAME, tc.name)
+                    span.set_attribute(ToolAttrs.INPUT_SUMMARY, args_summary[:100])
+                    try:
+                        result_text = tool.execute(**tc.input)
+                        span.set_attribute(ToolAttrs.RESULT_CHARS, len(result_text))
+                        span.set_attribute(ToolAttrs.IS_ERROR, False)
+                        logger.info("tool_ok", tool=tc.name, result_chars=len(result_text))
+                        if lf_tool is not None:
+                            lf_tool.update(output={"result_chars": len(result_text)})
+                        return ToolCallResult(tool_use_id=tc.id, content=result_text)
 
-                except _RETRYABLE_ERRORS as exc:
-                    span.set_attribute(ToolAttrs.IS_ERROR, True)
-                    if attempt < self._max_retries:
-                        logger.warning(
-                            "tool_retry",
-                            tool=tc.name,
-                            attempt=attempt,
-                            max_retries=self._max_retries,
-                            error=str(exc),
-                            retry_in=delay,
-                        )
-                        time.sleep(delay)
-                        delay *= 2
-                    else:
-                        msg = f"Tool '{tc.name}' failed after {self._max_retries} attempts: {exc}"
-                        logger.error("tool_failed", tool=tc.name, attempts=self._max_retries)
+                    except _RETRYABLE_ERRORS as exc:
+                        span.set_attribute(ToolAttrs.IS_ERROR, True)
+                        if attempt < self._max_retries:
+                            logger.warning(
+                                "tool_retry",
+                                tool=tc.name,
+                                attempt=attempt,
+                                max_retries=self._max_retries,
+                                error=str(exc),
+                                retry_in=delay,
+                            )
+                            time.sleep(delay)
+                            delay *= 2
+                        else:
+                            msg = f"Tool '{tc.name}' failed after {self._max_retries} attempts: {exc}"
+                            logger.error("tool_failed", tool=tc.name, attempts=self._max_retries)
+                            if lf_tool is not None:
+                                lf_tool.update(level="ERROR", status_message=msg)
+                            return ToolCallResult(tool_use_id=tc.id, content=msg, is_error=True)
+
+                    except Exception as exc:
+                        span.set_attribute(ToolAttrs.IS_ERROR, True)
+                        msg = f"Tool '{tc.name}' error: {type(exc).__name__}: {exc}"
+                        logger.error("tool_error", tool=tc.name, exc_type=type(exc).__name__, error=str(exc))
+                        if lf_tool is not None:
+                            lf_tool.update(level="ERROR", status_message=msg)
                         return ToolCallResult(tool_use_id=tc.id, content=msg, is_error=True)
-
-                except Exception as exc:
-                    span.set_attribute(ToolAttrs.IS_ERROR, True)
-                    msg = f"Tool '{tc.name}' error: {type(exc).__name__}: {exc}"
-                    logger.error("tool_error", tool=tc.name, exc_type=type(exc).__name__, error=str(exc))
-                    return ToolCallResult(tool_use_id=tc.id, content=msg, is_error=True)
 
         return ToolCallResult(tool_use_id=tc.id, content="Unexpected executor state.", is_error=True)

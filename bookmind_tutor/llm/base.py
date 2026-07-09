@@ -140,22 +140,38 @@ class LLMClient(ABC):
         tools: list[dict] | None = None,
         max_tokens: int = 4096,
     ) -> CompletionResponse:
-        """Blocking completion with an OTel span."""
+        """Blocking completion with OTel span + Langfuse generation."""
         from bookmind_tutor.observability.tracing import GenAIAttrs, get_tracer, set_error
+        from bookmind_tutor.observability.langfuse_tracing import langfuse_observation
+        lf_input = ([{"role": "system", "content": system}] + list(messages)) if system else list(messages)
         tracer = get_tracer()
         with tracer.start_as_current_span("gen_ai.complete") as span:
             span.set_attribute(GenAIAttrs.SYSTEM, self.provider)
             span.set_attribute(GenAIAttrs.REQUEST_MODEL, self.model)
             span.set_attribute(GenAIAttrs.OPERATION, "complete")
-            try:
-                response = self._complete(messages, system, tools, max_tokens)
-                span.set_attribute(GenAIAttrs.INPUT_TOKENS, response.usage.input_tokens)
-                span.set_attribute(GenAIAttrs.OUTPUT_TOKENS, response.usage.output_tokens)
-                span.set_attribute(GenAIAttrs.STOP_REASON, response.stop_reason)
-                return response
-            except Exception as exc:
-                set_error(span, exc)
-                raise
+            with langfuse_observation(
+                "llm.complete", as_type="generation",
+                model=self.model, input=lf_input,
+            ) as lf_gen:
+                try:
+                    response = self._complete(messages, system, tools, max_tokens)
+                    span.set_attribute(GenAIAttrs.INPUT_TOKENS, response.usage.input_tokens)
+                    span.set_attribute(GenAIAttrs.OUTPUT_TOKENS, response.usage.output_tokens)
+                    span.set_attribute(GenAIAttrs.STOP_REASON, response.stop_reason)
+                    if lf_gen is not None:
+                        lf_gen.update(
+                            output=response.text or response.raw_message,
+                            usage_details={
+                                "input": response.usage.input_tokens,
+                                "output": response.usage.output_tokens,
+                            },
+                        )
+                    return response
+                except Exception as exc:
+                    set_error(span, exc)
+                    if lf_gen is not None:
+                        lf_gen.update(level="ERROR", status_message=str(exc))
+                    raise
 
     def stream(
         self,
@@ -165,23 +181,39 @@ class LLMClient(ABC):
         max_tokens: int = 4096,
     ) -> Iterator[str]:
         """
-        Yield text tokens as they arrive, wrapped in an OTel span.
+        Yield text tokens as they arrive, wrapped in an OTel span + Langfuse generation.
 
         After the iterator is exhausted, last_response holds the full
         CompletionResponse (stop_reason, tool_calls, usage, raw_message).
         """
         from bookmind_tutor.observability.tracing import GenAIAttrs, get_tracer, set_error
+        from bookmind_tutor.observability.langfuse_tracing import langfuse_observation
+        lf_input = ([{"role": "system", "content": system}] + list(messages)) if system else list(messages)
         tracer = get_tracer()
         with tracer.start_as_current_span("gen_ai.stream") as span:
             span.set_attribute(GenAIAttrs.SYSTEM, self.provider)
             span.set_attribute(GenAIAttrs.REQUEST_MODEL, self.model)
             span.set_attribute(GenAIAttrs.OPERATION, "stream")
-            try:
-                yield from self._stream(messages, system, tools, max_tokens)
-                if self.last_response:
-                    span.set_attribute(GenAIAttrs.INPUT_TOKENS, self.last_response.usage.input_tokens)
-                    span.set_attribute(GenAIAttrs.OUTPUT_TOKENS, self.last_response.usage.output_tokens)
-                    span.set_attribute(GenAIAttrs.STOP_REASON, self.last_response.stop_reason)
-            except Exception as exc:
-                set_error(span, exc)
-                raise
+            with langfuse_observation(
+                "llm.stream", as_type="generation",
+                model=self.model, input=lf_input,
+            ) as lf_gen:
+                try:
+                    yield from self._stream(messages, system, tools, max_tokens)
+                    if self.last_response:
+                        span.set_attribute(GenAIAttrs.INPUT_TOKENS, self.last_response.usage.input_tokens)
+                        span.set_attribute(GenAIAttrs.OUTPUT_TOKENS, self.last_response.usage.output_tokens)
+                        span.set_attribute(GenAIAttrs.STOP_REASON, self.last_response.stop_reason)
+                        if lf_gen is not None:
+                            lf_gen.update(
+                                output=self.last_response.text or self.last_response.raw_message,
+                                usage_details={
+                                    "input": self.last_response.usage.input_tokens,
+                                    "output": self.last_response.usage.output_tokens,
+                                },
+                            )
+                except Exception as exc:
+                    set_error(span, exc)
+                    if lf_gen is not None:
+                        lf_gen.update(level="ERROR", status_message=str(exc))
+                    raise

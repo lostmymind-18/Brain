@@ -136,14 +136,30 @@ class QAAgent:
             force_strategy: Optional strategy override — "react", "plan-execute",
                 or "reflexion". None means auto-route by keyword heuristic.
         """
+        from bookmind_tutor.observability.langfuse_tracing import (
+            langfuse_flush,
+            langfuse_observation,
+        )
         self._turn_count += 1
         self._harness.system_prompt = self._build_system_prompt(question)
         tracer = get_tracer()
         with tracer.start_as_current_span("qa.turn") as span:
             span.set_attribute(QAAttrs.TURN_COUNT, self._turn_count)
-            answer = self._router.chat(question, memory=self._memory, force_strategy=force_strategy)
-            if self._router.last_trace:
-                span.set_attribute(QAAttrs.STRATEGY, self._router.last_trace.strategy_name)
+            with langfuse_observation(
+                "qa.turn", as_type="agent",
+                input={"question": question},
+                metadata={"book": self._book_name, "turn": self._turn_count},
+            ) as lf_obs:
+                answer = self._router.chat(question, memory=self._memory, force_strategy=force_strategy)
+                strategy = self._router.last_trace.strategy_name if self._router.last_trace else None
+                if strategy:
+                    span.set_attribute(QAAttrs.STRATEGY, strategy)
+                if lf_obs is not None:
+                    lf_obs.update(
+                        output={"answer": answer},
+                        metadata={"strategy": strategy},
+                    )
+        langfuse_flush()
         return answer
 
     def stream_chat(
@@ -153,16 +169,35 @@ class QAAgent:
         Stream one user turn. Updates system prompt same as chat(), then
         delegates to router.stream_chat(). Sets last_trace when exhausted.
         """
+        from bookmind_tutor.observability.langfuse_tracing import (
+            langfuse_flush,
+            langfuse_observation,
+        )
         self._turn_count += 1
         self._harness.system_prompt = self._build_system_prompt(question)
         tracer = get_tracer()
         with tracer.start_as_current_span("qa.turn") as span:
             span.set_attribute(QAAttrs.TURN_COUNT, self._turn_count)
-            yield from self._router.stream_chat(
-                question, memory=self._memory, force_strategy=force_strategy
-            )
-            if self._router.last_trace:
-                span.set_attribute(QAAttrs.STRATEGY, self._router.last_trace.strategy_name)
+            with langfuse_observation(
+                "qa.turn", as_type="agent",
+                input={"question": question},
+                metadata={"book": self._book_name, "turn": self._turn_count},
+            ) as lf_obs:
+                accumulated: list[str] = []
+                for token in self._router.stream_chat(
+                    question, memory=self._memory, force_strategy=force_strategy
+                ):
+                    accumulated.append(token)
+                    yield token
+                strategy = self._router.last_trace.strategy_name if self._router.last_trace else None
+                if strategy:
+                    span.set_attribute(QAAttrs.STRATEGY, strategy)
+                if lf_obs is not None:
+                    lf_obs.update(
+                        output={"answer": "".join(accumulated)},
+                        metadata={"strategy": strategy},
+                    )
+        langfuse_flush()
 
     @property
     def last_trace(self) -> ReasoningTrace | None:
