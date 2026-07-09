@@ -4,6 +4,32 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## Post Week-9 bug fixes - complete
+
+Discovered and fixed 7 bugs via code review + E2E testing.
+All 321 tests pass. Changes tracked in `backlog.md`.
+
+**Local LLM support bug fixes (`llm/`, `tutor/`, `evaluation/`):**
+
+- `tutor/app.py`: Guard `base_url` in kwargs with `_LLM_PROVIDER == "openai"` check.
+  Prevented `TypeError` crash when `LLM_BASE_URL` is set while using the Anthropic provider.
+- `llm/__init__.py`: Strip unknown kwargs from `AnthropicClient` call (it only accepts `model`
+  and `api_key`). Auto-set `stream_usage=False` in factory when `base_url` is present for OpenAI.
+- `llm/openai_client.py`: Replace `base_url is None` heuristic with explicit `stream_usage: bool = True`
+  constructor param. Remove errant `continue` after usage update in stream loop (prevented silent
+  content drops when provider sends usage + content in same chunk).
+- `evaluation/runner.py` + `evaluation/__main__.py`: Add `RunConfig.base_url` and `--base-url`
+  CLI arg (defaults to `LLM_BASE_URL` env var) so eval runner respects the same provider config as
+  the Streamlit app.
+
+**structlog fix (`observability/setup.py`):**
+
+- Removed `structlog.stdlib.add_logger_name` from shared processors.
+  This processor requires `logging.Logger.name` which is unavailable on `structlog.PrintLogger`.
+  Bug surfaced during E2E test - first real OpenAI-backed chat request crashed the harness.
+
+---
+
 ## Week 1 - PDF Ingestion Pipeline
 
 ### Core implementation - complete
