@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "book_id": "your_book_id_here",
+  "book_name": "Your Book Title",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "What is the main thesis of this book?",
+      "expected_keywords": [],
+      "difficulty": "conceptual"
+    },
+    {
+      "id": "q2",
+      "question": "How does the author define [key concept]?",
+      "expected_keywords": [],
+      "difficulty": "factual"
+    },
+    {
+      "id": "q3",
+      "question": "What are the tradeoffs between [approach A] and [approach B]?",
+      "expected_keywords": [],
+      "difficulty": "synthesis"
+    }
+  ]
+}

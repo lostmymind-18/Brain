@@ -1,0 +1,59 @@
+"""GraphRAGSearchTool: semantic search enhanced with knowledge graph expansion."""
+from __future__ import annotations
+
+from bookmind_tutor.agents.models import ToolSpec
+from bookmind_tutor.agents.tools.base import Tool
+from bookmind_tutor.knowledge_graph.graph_rag import GraphRAGRetriever
+
+
+class GraphRAGSearchTool(Tool):
+    """
+    Search the indexed book using GraphRAG — vector search enriched by KG traversal.
+
+    Compared to BookSearchTool (plain vector search), this tool also expands
+    the query with entities related to those found in the question, surfacing
+    chunks that vector search alone would miss.
+
+    Use this tool instead of BookSearchTool when a knowledge graph has been built
+    for the book. Falls back gracefully to pure vector results when the graph is
+    empty or no query entities match.
+    """
+
+    def __init__(self, retriever: GraphRAGRetriever, k: int = 5) -> None:
+        self._retriever = retriever
+        self._k = k
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="book_search",
+            description=(
+                "Search the book for passages relevant to a question or topic. "
+                "Use this whenever you need to find information from the book. "
+                "Returns up to 5 relevant excerpts with source location."
+            ),
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The question or topic to search for.",
+                    }
+                },
+                "required": ["query"],
+            },
+        )
+
+    def execute(self, query: str) -> str:
+        results = self._retriever.search(query)
+        if not results:
+            return "No relevant passages found in the book."
+
+        parts: list[str] = []
+        for i, r in enumerate(results, 1):
+            chapter = r.chapter or "unknown chapter"
+            loc = chapter + (f" / {r.section}" if r.section else "")
+            loc += f", p.{r.page_range[0]}"
+            parts.append(f"[{i}] ({loc})\n{r.text}")
+
+        return "\n\n".join(parts)

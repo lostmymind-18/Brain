@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+data/pdf/
+data/chroma/
+data/history/
+data/library.json
+data/interactions.jsonl
+data/eval_reports/
