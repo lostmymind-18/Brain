@@ -45,15 +45,17 @@ class GetBookSectionTool(Tool):
         return ToolSpec(
             name="get_book_section",
             description=(
-                "Retrieve ALL content from a specific part, chapter, or page range of "
-                "the book — not just the most relevant excerpts. Use this tool (instead "
-                "of book_search) when the user asks to summarize, overview, or explain "
-                "an entire chapter or part. "
-                "Call book_outline first to find the exact chapter/part names, then pass "
-                "those names here. "
-                "Fields: 'section' = chapter level (e.g. 'Chapter 5. Pipeline Architecture'), "
-                "'chapter' = part level (e.g. 'Part II. Architecture Styles'). "
-                "All string matching is case-insensitive substring match."
+                "Retrieve ALL content from a specific chapter or part of the book. "
+                "Use when the user asks to summarize or overview an entire chapter or part.\n\n"
+                "ALWAYS provide BOTH required parameters: `field` AND `contains`.\n"
+                "  - To get a chapter: field=\"section\", contains=\"Chapter 1\"\n"
+                "  - To get a part:    field=\"chapter\", contains=\"Part II\"\n\n"
+                "The `field` parameter selects which metadata field to search:\n"
+                "  - \"section\": chapter-level headings (e.g. 'Chapter 1. Introduction')\n"
+                "  - \"chapter\": part-level headings (e.g. 'Part I. Foundations')\n\n"
+                "The `contains` parameter is the search string (case-insensitive substring). "
+                "Call book_outline first to find exact names. "
+                "WARNING: `contains` must not be empty — always provide a search term."
             ),
             input_schema={
                 "type": "object",
@@ -62,16 +64,16 @@ class GetBookSectionTool(Tool):
                         "type": "string",
                         "enum": ["chapter", "section"],
                         "description": (
-                            "Metadata field to filter on. "
-                            "'section' matches chapter-level headings; "
-                            "'chapter' matches part-level headings."
+                            "Metadata field to filter on: "
+                            "'section' for chapter-level headings, "
+                            "'chapter' for part-level headings."
                         ),
                     },
                     "contains": {
                         "type": "string",
                         "description": (
-                            "Substring to match against the field value (case-insensitive). "
-                            "Example: 'Chapter 5' or 'Part I' or 'Pipeline'."
+                            "Non-empty substring to match (case-insensitive). "
+                            "Examples: 'Chapter 1', 'Part II', 'Pipeline Architecture'."
                         ),
                     },
                     "page_from": {
@@ -89,13 +91,22 @@ class GetBookSectionTool(Tool):
 
     def execute(
         self,
-        field: str,
-        contains: str,
+        field: str = "",
+        contains: str = "",
         page_from: int | None = None,
         page_to: int | None = None,
     ) -> str:
         if field not in ("chapter", "section"):
-            return f"Invalid field '{field}'. Must be 'chapter' or 'section'."
+            return (
+                f"Invalid field '{field}'. Must be 'chapter' or 'section'. "
+                "Example: field=\"section\", contains=\"Chapter 1\""
+            )
+        if not contains or not contains.strip():
+            return (
+                "The 'contains' parameter must not be empty. "
+                "Provide a chapter or part name to match. "
+                "Example: field=\"section\", contains=\"Chapter 1\""
+            )
 
         raw = self._store._collection.get(include=["documents", "metadatas"])
         if not raw["ids"]:
@@ -130,11 +141,26 @@ class GetBookSectionTool(Tool):
 
         parts: list[str] = []
         if truncated:
+            # Count distinct section names to detect substring ambiguity.
+            distinct = {
+                (meta.get(field) or "").strip()
+                for _, _, meta in matched
+                if (meta.get(field) or "").strip()
+            }
+            ambiguity_hint = ""
+            if len(distinct) > 1 and not contains.endswith("."):
+                ambiguity_hint = (
+                    f" WARNING: '{contains}' matched {len(distinct)} different sections "
+                    f"(substring is too broad, e.g. 'Chapter 1' also matches Chapter 10, 11...). "
+                    f"Try adding a period: contains='{contains}.' to match exactly one section."
+                )
             parts.append(
-                f"[Note: {len(matched)} chunks matched. Showing first {_MAX_CHUNKS} "
-                f"(pages {chunks_to_show[0][0]}–{chunks_to_show[-1][0]}) to fit context. "
-                "Summarize from these excerpts; mention that the summary covers the opening "
-                "portion of this section if relevant.]"
+                f"[Note: {len(matched)} chunks across {len(distinct)} section(s) matched. "
+                f"Showing first {_MAX_CHUNKS} (pages {chunks_to_show[0][0]}-{chunks_to_show[-1][0]})."
+                + ambiguity_hint
+                + " DO NOT call this tool again with the same parameters - "
+                "calling again returns the same result. Fix the 'contains' value if needed, "
+                "or summarize from the excerpts provided here.]"
             )
 
         for page_start, doc, meta in chunks_to_show:

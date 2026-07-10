@@ -118,7 +118,7 @@ class AgentHarness:
 
     @property
     def last_retrieved_chunks(self) -> list[str]:
-        """Texts returned by book_search during the most recent chat() call."""
+        """Texts returned by book_search, graph_rag_search, or get_book_section during the most recent chat() call."""
         return list(self._last_retrieved_chunks)
 
     @property
@@ -193,7 +193,7 @@ class AgentHarness:
                         memory.add_assistant(response.raw_message)
                         results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
                         for tc, r in zip(response.tool_calls, results):
-                            if tc.name in ("book_search", "graph_rag_search") and not r.is_error:
+                            if tc.name in ("book_search", "graph_rag_search", "get_book_section") and not r.is_error:
                                 self._last_retrieved_chunks.append(r.content)
                             status = "error" if r.is_error else f"{len(r.content)} chars"
                             self._last_steps.append(f"[{step}]  → {status}")
@@ -292,7 +292,7 @@ class AgentHarness:
                         memory.add_assistant(response.raw_message)
                         results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
                         for tc, r in zip(response.tool_calls, results):
-                            if tc.name in ("book_search", "graph_rag_search") and not r.is_error:
+                            if tc.name in ("book_search", "graph_rag_search", "get_book_section") and not r.is_error:
                                 self._last_retrieved_chunks.append(r.content)
                             status = "error" if r.is_error else f"{len(r.content)} chars"
                             self._last_steps.append(f"[{step}]  → {status}")
