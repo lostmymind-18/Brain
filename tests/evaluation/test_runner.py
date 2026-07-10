@@ -10,11 +10,12 @@ from bookmind_tutor.evaluation.logger import InteractionLogger, InteractionRecor
 from bookmind_tutor.evaluation.runner import EvalReport, EvalRow, EvalRunner, RunConfig
 
 
-def _eval_result(fa: float = 0.8, cq: float = 0.7, dr: float = 0.9) -> EvalResult:
+def _eval_result(fa: float = 0.8, cq: float = 0.7, dr: float = 0.9, hs: float = 0.1) -> EvalResult:
     return EvalResult(
         factual_accuracy=fa,
         citation_quality=cq,
         depth_and_relevance=dr,
+        hallucination_score=hs,
         overall=(fa + cq + dr) / 3.0,
         reasoning="Good answer.",
         model_used="gpt-4o-mini",
@@ -60,8 +61,8 @@ def _runner(
 class TestEvalReport:
     def test_summary_by_config_single(self) -> None:
         rows = [
-            EvalRow("q1", "Q1?", "cfg-a", "A1", 0.8, 0.7, 0.9, 0.8, 1.0),
-            EvalRow("q2", "Q2?", "cfg-a", "A2", 0.6, 0.5, 0.7, 0.6, 1.5),
+            EvalRow("q1", "Q1?", "cfg-a", "A1", 0.8, 0.7, 0.9, 0.1, 0.8, 1.0),
+            EvalRow("q2", "Q2?", "cfg-a", "A2", 0.6, 0.5, 0.7, 0.2, 0.6, 1.5),
         ]
         report = EvalReport(timestamp="t", book_id="b", configs=[], rows=rows)
         summary = report.summary_by_config()
@@ -71,8 +72,8 @@ class TestEvalReport:
 
     def test_summary_by_config_multiple(self) -> None:
         rows = [
-            EvalRow("q1", "Q1?", "a", "A", 0.9, 0.9, 0.9, 0.9, 1.0),
-            EvalRow("q1", "Q1?", "b", "B", 0.5, 0.5, 0.5, 0.5, 2.0),
+            EvalRow("q1", "Q1?", "a", "A", 0.9, 0.9, 0.9, 0.0, 0.9, 1.0),
+            EvalRow("q1", "Q1?", "b", "B", 0.5, 0.5, 0.5, 0.5, 0.5, 2.0),
         ]
         report = EvalReport(timestamp="t", book_id="b", configs=[], rows=rows)
         summary = report.summary_by_config()
@@ -80,7 +81,7 @@ class TestEvalReport:
         assert summary["b"]["overall"] == pytest.approx(0.5)
 
     def test_to_markdown_table_contains_headers(self) -> None:
-        rows = [EvalRow("q1", "What is X?", "cfg", "X is Y.", 0.9, 0.8, 0.7, 0.8, 1.0)]
+        rows = [EvalRow("q1", "What is X?", "cfg", "X is Y.", 0.9, 0.8, 0.7, 0.1, 0.8, 1.0)]
         report = EvalReport(timestamp="t", book_id="b", configs=[], rows=rows)
         table = report.to_markdown_table()
         assert "Question" in table
@@ -88,7 +89,7 @@ class TestEvalReport:
         assert "cfg" in table
 
     def test_to_csv_contains_rows(self) -> None:
-        rows = [EvalRow("q1", "What is X?", "cfg", "X is Y.", 0.9, 0.8, 0.7, 0.8, 1.0)]
+        rows = [EvalRow("q1", "What is X?", "cfg", "X is Y.", 0.9, 0.8, 0.7, 0.1, 0.8, 1.0)]
         report = EvalReport(timestamp="t", book_id="b", configs=[], rows=rows)
         csv_text = report.to_csv()
         assert "question_id" in csv_text

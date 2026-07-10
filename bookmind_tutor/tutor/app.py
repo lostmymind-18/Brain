@@ -54,7 +54,9 @@ from bookmind_tutor.agents.strategies import (
     ReflexionStrategy,
     StrategyRouter,
 )
+from bookmind_tutor.agents.tools.book_outline import BookOutlineTool
 from bookmind_tutor.agents.tools.graph_rag_search import GraphRAGSearchTool
+from bookmind_tutor.agents.verification import CitationVerifier, VerificationResult
 from bookmind_tutor.knowledge_graph.extractor import EntityExtractor
 from bookmind_tutor.knowledge_graph.graph_rag import GraphRAGRetriever
 from bookmind_tutor.tutor.persistence import BookRecord, LibraryStore
@@ -205,6 +207,11 @@ def _init_state() -> None:
 
     if "interaction_logger" not in st.session_state:
         st.session_state.interaction_logger = InteractionLogger(_DATA_ROOT / "interactions.jsonl")
+
+    if "citation_verifier" not in st.session_state:
+        st.session_state.citation_verifier = CitationVerifier(
+            llm_client=st.session_state.llm_client
+        )
 
     if "guardrails" not in st.session_state:
         # TopicalityGuard makes a cheap LLM call (max_tokens=5) to check relevance.
@@ -392,8 +399,9 @@ def _setup_agent() -> None:
         graph_store=st.session_state.graph_store,  # shared user KG
         k=5,
     )
-    tool = GraphRAGSearchTool(retriever=retriever)
-    harness = AgentHarness(llm_client=llm, tools=[tool])
+    search_tool = GraphRAGSearchTool(retriever=retriever)
+    outline_tool = BookOutlineTool(vector_store=_current_vs())
+    harness = AgentHarness(llm_client=llm, tools=[outline_tool, search_tool])
     react = ReActStrategy(harness=harness)
     plan = PlanExecuteStrategy(harness=harness, llm_client=llm)
     reflexion = ReflexionStrategy(harness=harness, llm_client=llm)
@@ -422,6 +430,7 @@ def _chat_page() -> None:
             if msg["role"] == "assistant":
                 _render_trace(msg.get("trace"))
                 _render_sources(msg.get("sources", []))
+                _render_verification_dict(msg.get("verification"))
                 _render_suggestions(msg)
 
     if question := st.chat_input("Ask about the book..."):
@@ -479,29 +488,44 @@ def _handle_question(question: str) -> None:
         # Output guardrail (WARN-only: logs oversized responses, never blocks).
         st.session_state.guardrails.check_output(answer, ctx)
 
-        with st.spinner("Extracting concepts..."):
-            # KG suggestions and source display run after streaming completes.
-            search_results = _current_vs().search(question, k=5)
+        # KG extraction temporarily disabled — skip suggester.suggest() to reduce latency.
+        from bookmind_tutor.knowledge_graph.models import KGUpdateResult
+        kg_result = KGUpdateResult(suggestions=[], already_known=[])
+        search_results = _current_vs().search(question, k=5)
+
+        # Citation verification — runs after answer is complete.
+        with st.spinner("Verifying citations..."):
+            verification: VerificationResult | None = None
             try:
-                kg_result = st.session_state.suggester.suggest(
-                    search_results,
-                    st.session_state.graph_store,
+                retrieved_texts = trace.retrieved_chunks if trace else []
+                verification = st.session_state.citation_verifier.verify(
+                    answer, retrieved_texts
                 )
-            except LLMAPIError:
-                # Non-critical: skip KG suggestions if the API call fails.
-                from bookmind_tutor.knowledge_graph.models import KGUpdateResult
-                kg_result = KGUpdateResult(suggestions=[], already_known=[])
+            except Exception:
+                pass  # Non-critical: never let verifier crash the chat.
+
         _render_trace(trace)
         _render_sources(search_results)
+        _render_verification(verification)
 
     msg_id = st.session_state.next_msg_id
     st.session_state.next_msg_id += 1
+    # Serialize verification result as a plain dict so it survives JSON persistence.
+    verification_dict = None
+    if verification and verification.checks:
+        verification_dict = {
+            "checks": [
+                {"claim": c.claim, "grounded": c.grounded, "source": c.source}
+                for c in verification.checks
+            ]
+        }
     messages.append({
         "role": "assistant",
         "content": answer,
         "trace": trace,
         "sources": search_results,
         "suggestions": kg_result.suggestions,
+        "verification": verification_dict,
         "msg_id": msg_id,
     })
     st.session_state.library_store.save_history(
@@ -586,6 +610,45 @@ def _render_sources(sources: list) -> None:
             page_str = f"p. {p_start}" if p_start == p_end else f"pp. {p_start}-{p_end}"
             label = s.chapter or "Unknown section"
             st.caption(f"**{label}** · {page_str}")
+
+
+def _render_verification(result: VerificationResult | None) -> None:
+    """Render verification from a live VerificationResult object."""
+    if result is None or not result.checks:
+        return
+    _render_verification_checks(result.checks)
+
+
+def _render_verification_dict(data: dict | None) -> None:
+    """Render verification from a serialized dict (stored in message history)."""
+    if not data or not data.get("checks"):
+        return
+    from bookmind_tutor.agents.verification import ClaimCheck
+    checks = [
+        ClaimCheck(claim=c["claim"], grounded=c["grounded"], source=c.get("source", ""))
+        for c in data["checks"]
+    ]
+    _render_verification_checks(checks)
+
+
+def _render_verification_checks(checks) -> None:
+    g = sum(1 for c in checks if c.grounded)
+    u = sum(1 for c in checks if not c.grounded)
+    label_parts = []
+    if g:
+        label_parts.append(f"{g} verified")
+    if u:
+        label_parts.append(f"{u} unverified")
+    label = "Fact-check: " + ", ".join(label_parts)
+
+    # Expand automatically if there are unverified claims to draw attention.
+    with st.expander(label, expanded=u > 0):
+        for check in checks:
+            if check.grounded:
+                hint = f" _({check.source})_" if check.source else ""
+                st.caption(f"✓ {check.claim}{hint}")
+            else:
+                st.caption(f"⚠ {check.claim} — _not found in retrieved excerpts_")
 
 
 def _render_suggestions(msg: dict) -> None:

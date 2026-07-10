@@ -4,6 +4,51 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## Hallucination Defense - complete
+
+Systematic 4-layer defense against hallucination (ref: `plans/greedy-enchanting-yeti.md`).
+All 331 tests pass. E2E verified with Playwright.
+
+- **Layer 1 - Hybrid search** (`retrieval/vector_store.py`): BM25 + dense vector fusion
+  with `rank-bm25`. Score = 0.5 * cosine_sim + 0.5 * BM25_normalized. BM25 index built
+  lazily on first search from ChromaDB, cached until re-index. Exact-term and proper-noun
+  queries (e.g. "Chapter 14 Event-Driven Architecture") now rank the right chunk first.
+- **Layer 2 - Grounded generation** (`agents/harness.py`): Strengthened `_DEFAULT_SYSTEM`
+  with explicit no-parametric-memory rules: "never assert facts not in retrieved excerpts",
+  "say 'I could not find this' rather than guessing".
+- **Layer 3 - Citation verifier** (`agents/verification.py`, `tutor/app.py`): Post-answer
+  LLM call extracts up to 5 claims from the answer and checks each against retrieved chunks.
+  Renders "Fact-check: N verified, M unverified" expander - auto-expanded when unverified
+  claims exist. Stored serialized in message dict so it persists across `st.rerun()`.
+- **Layer 4 - Hallucination metric** (`evaluation/evaluator.py`, `evaluation/runner.py`):
+  Added `hallucination_score` (0.0=grounded, 1.0=hallucinated) to `_EVAL_PROMPT`,
+  `EvalResult`, `EvalRow`, `EvalReport.summary_by_config()`, markdown table, and CSV.
+- **Bonus bug fix** (`agents/harness.py`): `_last_retrieved_chunks` now captures both
+  `book_search` and `graph_rag_search` tool results (was only capturing `book_search`).
+- **KG extraction temporarily disabled** (`tutor/app.py`): `suggester.suggest()` skipped
+  per user request to reduce latency. Spinner renamed "Verifying citations...".
+
+---
+
+## Post Week-9 fixes + BookOutlineTool - complete
+
+Fixed hallucination on "list all chapters" queries. Root cause: TOC chunk embeddings
+represent chapter topics, not the concept "table of contents", so the TOC ranked #37
+of 317 in retrieval. Two fixes implemented (ref: `backlog.md`):
+
+- **`BookOutlineTool`** (`agents/tools/book_outline.py`): New deterministic tool that
+  derives the part/chapter hierarchy from ChromaDB metadata (chapter + section fields
+  set at ingest time). No embedding lookup - 100% accurate, matches `doc.get_toc()`.
+  Registered alongside `GraphRAGSearchTool` in `_setup_agent()`.
+- **Relevance threshold** in `BookSearchTool` and `GraphRAGSearchTool`: When best
+  cosine similarity < 0.25, prepend a warning to results so the model degrades
+  honestly ("do not invent details") instead of hallucinating.
+- **English query enforcement**: Tool descriptions now instruct the model to always
+  search in English (Vietnamese queries against English embeddings gave strictly worse
+  retrieval).
+
+---
+
 ## Post Week-9 bug fixes - complete
 
 Discovered and fixed 7 bugs via code review + E2E testing.

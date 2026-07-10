@@ -159,6 +159,29 @@ Không cần fix - đây là library bug không trong tầm kiểm soát của d
 
 ---
 
+### ~~Global aggregation questions ("list all chapters") hallucinate - RAG cannot ground them~~ (fixed)
+
+**Files:** `bookmind_tutor/agents/tools/book_search.py`, `bookmind_tutor/retrieval/vector_store.py`, ingestion pipeline
+
+Reported 2026-07-10: asking "co nhung chuong nao trong moi phan?" produces a confidently wrong chapter list (invented titles, off-by-one numbering).
+
+Root cause chain (verified against the live index):
+1. The TOC IS ingested (5 chunks, pages 7-14, chapter label "Table of Contents"), and the PDF even has a built-in outline (`doc.get_toc()`, 287 entries) with the exact ground truth.
+2. But vector search cannot surface it: query "table of contents" ranks the first TOC chunk at #37 of 317.
+   TOC chunk embeddings represent the *topics* of the chapter titles (architecture, microservices...), not the concept "table of contents". Dot leaders and page numbers further dilute the embedding.
+3. `BookSearchTool` has no relevance threshold. All top-5 distances were > 0.78 (nothing close), yet the tool returned 5 topically unrelated excerpts instead of "no good match".
+4. The LLM, given zero grounding but an answerable-looking question, reconstructs the chapter list from parametric memory and translates it to Vietnamese. Result: plausible but wrong.
+
+This is a structural weakness of chunk-level RAG for global aggregation queries ("list all X in the book"), not a bug in any single component. Per the roadmap, fast lookup/synthesis from the book is the must-hit value, so this deserves a real fix.
+
+Proposed fix (two independent parts):
+- **`book_outline` tool** (primary): persist `doc.get_toc()` at ingest time (e.g. into `library.json` or a sidecar file) and expose a tool that returns the part/chapter structure verbatim. Deterministic, no embeddings involved. The chunk metadata already carries the full hierarchy (chapter = Part, section = Chapter), so a fallback can also be derived from ChromaDB metadata for books without an embedded outline.
+- **Relevance threshold in `BookSearchTool`** (secondary): when the best distance is above a cutoff, prepend a warning like "results may be irrelevant" or return "no relevant passages found", so the model degrades honestly instead of hallucinating.
+
+Status: root cause confirmed, fix not yet implemented. Related earlier fix: tool descriptions now instruct the model to always search in English (Vietnamese queries against English embeddings made retrieval strictly worse).
+
+---
+
 ### Table extraction (stretch goal)
 **File:** new module `bookmind_tutor/ingestion/table_extractor.py`
 

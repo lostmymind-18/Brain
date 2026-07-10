@@ -29,12 +29,13 @@ RETRIEVED CONTEXT (from the book):
 ANSWER:
 {answer}
 
-Rate the answer on three dimensions from 0.0 to 1.0.
+Rate the answer on four dimensions from 0.0 to 1.0.
 Return ONLY valid JSON - no explanation outside the JSON:
 {{
-  "factual_accuracy": <float 0.0-1.0>,
-  "citation_quality": <float 0.0-1.0>,
-  "depth_and_relevance": <float 0.0-1.0>,
+  "factual_accuracy": <float 0.0-1.0, how factually correct the answer is>,
+  "citation_quality": <float 0.0-1.0, how well the answer cites chapter/page sources>,
+  "depth_and_relevance": <float 0.0-1.0, how deep and relevant the answer is>,
+  "hallucination_score": <float 0.0-1.0, where 0.0 means every claim is grounded in the retrieved context and 1.0 means the answer contains facts NOT found in the retrieved context>,
   "reasoning": "<one sentence explanation>"
 }}\
 """
@@ -50,9 +51,10 @@ class EvalResult:
     factual_accuracy: float
     citation_quality: float
     depth_and_relevance: float
-    overall: float          # simple mean of the three dimensions
+    hallucination_score: float  # 0.0 = fully grounded, 1.0 = fully hallucinated
+    overall: float              # mean of factual_accuracy, citation_quality, depth_and_relevance
     reasoning: str
-    model_used: str         # which model acted as judge
+    model_used: str             # which model acted as judge
 
 
 class AnswerEvaluator:
@@ -93,6 +95,7 @@ class AnswerEvaluator:
             factual_accuracy=-1.0,
             citation_quality=-1.0,
             depth_and_relevance=-1.0,
+            hallucination_score=-1.0,
             overall=-1.0,
             reasoning="Evaluation failed: could not parse LLM response after retry.",
             model_used=self._client.model,
@@ -118,6 +121,8 @@ class AnswerEvaluator:
             fa = float(data["factual_accuracy"])
             cq = float(data["citation_quality"])
             dr = float(data["depth_and_relevance"])
+            # hallucination_score defaults to 0.0 for backward compat with old eval logs
+            hs = float(data.get("hallucination_score", 0.0))
             reasoning = str(data.get("reasoning", ""))
         except (KeyError, TypeError, ValueError):
             return None
@@ -126,6 +131,7 @@ class AnswerEvaluator:
             factual_accuracy=fa,
             citation_quality=cq,
             depth_and_relevance=dr,
+            hallucination_score=hs,
             overall=(fa + cq + dr) / 3.0,
             reasoning=reasoning,
             model_used=self._client.model,

@@ -49,6 +49,7 @@ class EvalRow:
     factual_accuracy: float
     citation_quality: float
     depth_and_relevance: float
+    hallucination_score: float  # 0.0 = fully grounded, 1.0 = fully hallucinated
     overall: float
     elapsed_seconds: float
 
@@ -72,22 +73,23 @@ class EvalReport:
                 "factual_accuracy": sum(r.factual_accuracy for r in rows) / n,
                 "citation_quality": sum(r.citation_quality for r in rows) / n,
                 "depth_and_relevance": sum(r.depth_and_relevance for r in rows) / n,
+                "hallucination_score": sum(r.hallucination_score for r in rows) / n,
                 "overall": sum(r.overall for r in rows) / n,
                 "n_questions": float(n),
             }
         return summary
 
     def to_markdown_table(self) -> str:
-        header = "| Question | Config | Accuracy | Citation | Depth | Overall | Time |"
-        sep    = "|---------|--------|----------|---------|-------|---------|------|"
+        header = "| Question | Config | Accuracy | Citation | Depth | Hallucination | Overall | Time |"
+        sep    = "|---------|--------|----------|---------|-------|---------------|---------|------|"
         lines = [header, sep]
         for row in self.rows:
             q = (row.question[:40] + "...") if len(row.question) > 40 else row.question
             lines.append(
                 f"| {q} | {row.config_label} "
                 f"| {row.factual_accuracy:.2f} | {row.citation_quality:.2f} "
-                f"| {row.depth_and_relevance:.2f} | {row.overall:.2f} "
-                f"| {row.elapsed_seconds:.1f}s |"
+                f"| {row.depth_and_relevance:.2f} | {row.hallucination_score:.2f} "
+                f"| {row.overall:.2f} | {row.elapsed_seconds:.1f}s |"
             )
         return "\n".join(lines)
 
@@ -96,7 +98,7 @@ class EvalReport:
         writer = csv.DictWriter(buf, fieldnames=[
             "question_id", "question", "config_label", "answer",
             "factual_accuracy", "citation_quality", "depth_and_relevance",
-            "overall", "elapsed_seconds",
+            "hallucination_score", "overall", "elapsed_seconds",
         ])
         writer.writeheader()
         for row in self.rows:
@@ -108,6 +110,7 @@ class EvalReport:
                 "factual_accuracy": row.factual_accuracy,
                 "citation_quality": row.citation_quality,
                 "depth_and_relevance": row.depth_and_relevance,
+                "hallucination_score": row.hallucination_score,
                 "overall": row.overall,
                 "elapsed_seconds": row.elapsed_seconds,
             })
@@ -170,6 +173,7 @@ class EvalRunner:
                         "factual_accuracy": r.factual_accuracy,
                         "citation_quality": r.citation_quality,
                         "depth_and_relevance": r.depth_and_relevance,
+                        "hallucination_score": r.hallucination_score,
                         "overall": r.overall,
                         "elapsed_seconds": r.elapsed_seconds,
                     }
@@ -216,6 +220,7 @@ class EvalRunner:
                 "factual_accuracy": eval_result.factual_accuracy,
                 "citation_quality": eval_result.citation_quality,
                 "depth_and_relevance": eval_result.depth_and_relevance,
+                "hallucination_score": eval_result.hallucination_score,
             },
         ))
 
@@ -227,6 +232,7 @@ class EvalRunner:
             factual_accuracy=eval_result.factual_accuracy,
             citation_quality=eval_result.citation_quality,
             depth_and_relevance=eval_result.depth_and_relevance,
+            hallucination_score=eval_result.hallucination_score,
             overall=eval_result.overall,
             elapsed_seconds=elapsed,
         )

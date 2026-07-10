@@ -39,7 +39,12 @@ _DEFAULT_SYSTEM = (
     "Write the final answer directly. Never include meta-commentary like "
     "'Now I have enough information', 'Let me compile', 'Based on my search', "
     "'Perfect!', or any phrase that describes what you are about to do. "
-    "Start immediately with the content of the answer."
+    "Start immediately with the content of the answer. "
+    "GROUNDING RULES: Every factual claim about the book — chapter names, page numbers, "
+    "author arguments, specific examples — must appear in the retrieved excerpts or "
+    "book_outline output. Never use your training knowledge to fill gaps. "
+    "If the search results do not contain enough information to answer confidently, "
+    "say 'I could not find this in the book' rather than guessing or fabricating details."
 )
 
 _MAX_ITERATIONS_FALLBACK = (
@@ -188,7 +193,7 @@ class AgentHarness:
                         memory.add_assistant(response.raw_message)
                         results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
                         for tc, r in zip(response.tool_calls, results):
-                            if tc.name == "book_search" and not r.is_error:
+                            if tc.name in ("book_search", "graph_rag_search") and not r.is_error:
                                 self._last_retrieved_chunks.append(r.content)
                             status = "error" if r.is_error else f"{len(r.content)} chars"
                             self._last_steps.append(f"[{step}]  → {status}")
@@ -287,7 +292,7 @@ class AgentHarness:
                         memory.add_assistant(response.raw_message)
                         results: list[ToolCallResult] = self._executor.execute_all(response.tool_calls)
                         for tc, r in zip(response.tool_calls, results):
-                            if tc.name == "book_search" and not r.is_error:
+                            if tc.name in ("book_search", "graph_rag_search") and not r.is_error:
                                 self._last_retrieved_chunks.append(r.content)
                             status = "error" if r.is_error else f"{len(r.content)} chars"
                             self._last_steps.append(f"[{step}]  → {status}")
