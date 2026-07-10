@@ -59,6 +59,46 @@ và output là JSON, không cần reasoning phức tạp.
 
 ---
 
+## Loại 3: Tool-skip hallucination (đặc trưng của model nhỏ)
+
+Phát hiện từ thực nghiệm với qwen2.5:3b trên BookMind Tutor.
+
+Model nhỏ (≤7B) thường không đủ khả năng follow tool-use instructions trong ReAct loop.
+Thay vì gọi `book_search` để tra cứu, model trả lời thẳng từ training memory và coi như
+đã xong.
+
+Trace thực tế với qwen2.5:3b:
+```
+[1] end_turn — 0 out / 0 in tokens
+```
+Chỉ 1 LLM call, không có tool call nào, 0 tokens được đếm. Model bỏ qua hoàn toàn
+`book_search`, `book_outline`, `get_book_section` và trả lời từ kiến thức chung về
+layered architecture - không phải từ nội dung cuốn sách đang được hỏi.
+
+Citation verifier cũng thất bại vì verifier (cũng là qwen2.5:3b) không tạo ra JSON
+hợp lệ → không có fact-check expander.
+
+**Đây là failure mode nguy hiểm nhất trong ba loại** vì:
+- Không có signal nào cho user biết retrieval đã bị bỏ qua
+- Answer trông structured và confidence - không khác gì answer đúng
+- Toàn bộ defense layer 1 (retrieval) và layer 3 (verification) bị vô hiệu hoá
+
+### Ngưỡng model size cho tool use đáng tin cậy
+
+Từ quan sát thực tế (BookMind Tutor, ReAct strategy):
+
+| Model | Tool use | Ghi chú |
+|---|---|---|
+| qwen2.5:3b | Thất bại | Skip tools, answer từ memory |
+| qwen2.5:7b | Không ổn định | Đôi khi gọi đúng, đôi khi skip |
+| qwen2.5:14B+ | Đáng tin cậy | Follow instructions tốt |
+| GPT-4o-mini / Claude Haiku | Rất tốt | Production-ready |
+
+Với 24GB VRAM (RTX 3090): **qwen2.5:32B Q4** (~18GB) là lựa chọn tốt nhất cho
+local inference - đủ lớn để tool use đáng tin cậy, fit vào một card GPU.
+
+---
+
 ## Nguyên tắc tổng quát
 
 **"Model upgrade" là giải pháp cho parametric hallucination, không phải cho mọi
