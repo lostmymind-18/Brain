@@ -281,6 +281,52 @@ See PROGRESS.md "Search layer subsection support + contextual embedding".
 
 ---
 
+### Retrieval upgrades toward full contextual retrieval (planned)
+**Reference:** https://www.anthropic.com/engineering/contextual-retrieval
+**Context:** Compared our implementation against Anthropic's technique on 2026-07-11.
+We have 2 of their 3 pillars in miniature (contextual embeddings + contextual BM25,
+using free structural breadcrumbs instead of LLM-generated context). Their measured
+numbers: contextual embeddings alone -35% retrieval failures, + contextual BM25 -49%,
++ reranking -67%.
+
+Six gaps, ordered by recommended implementation sequence:
+
+1. **Retrieval eval set (do FIRST - everything else needs it to be measurable).**
+   ~20-30 queries per book with expected section/subsection answers.
+   Measure recall@k / labeled-hit rate like Anthropic's failure-rate metric.
+   Current 5-query ad-hoc spot-check cannot tell whether a change helps.
+
+2. **RRF (Reciprocal Rank Fusion) instead of max-norm alpha blend.**
+   `vector_store.py _search_hybrid()` normalizes BM25 by max score in candidate set,
+   so the top BM25 doc always gets 1.0 -> hybrid 0.500 even when dense disagrees.
+   Fingerprint observed: exactly-0.500 scores at k=1 with irrelevant results.
+   RRF is scale-free and k-independent. Nearly free to implement.
+
+3. **Cross-encoder reranker (biggest measured win in Anthropic's data: 49% -> 67%).**
+   No API needed: local `cross-encoder/ms-marco-MiniLM-L-6-v2` via sentence-transformers.
+   Retrieve ~30-50 candidates -> rerank -> pass top 10-20 to the LLM.
+
+4. **Raise top-k 5 -> ~20 (only together with reranker).**
+   Anthropic measured top-20 > top-10 > top-5. At 160-word chunks, 20 chunks ~ 4k
+   tokens - fits gpt-4o-mini easily. Without reranking, larger k just adds noise.
+
+5. **LLM-generated situating context (the "full" contextual retrieval).**
+   Breadcrumb says WHERE the chunk is; LLM context says WHAT it discusses -
+   resolves referential ambiguity ("this approach", "the previous technique") that
+   headings cannot. Haiku at ingest time, one-time ~$0.5-1/book. Run as an A/B
+   experiment against breadcrumb-only using the eval set from item 1.
+
+6. **Embedding model upgrade (structural ceiling, decide separately).**
+   all-MiniLM-L6-v2's 256-BPE limit forced the entire chunk-size dance and caps
+   quality. Voyage/Gemini handle 8k+ tokens. Bigger decision: cost, API dependency.
+
+Honest caveat from the article, worth knowing for interviews: for knowledge bases
+under ~200k tokens (~500 pages), long-context + prompt caching beats RAG entirely.
+DDIA is safely above the threshold; FoSA is borderline. For this learning project,
+RAG remains the right choice by objective.
+
+---
+
 ### Table extraction (stretch goal)
 **File:** new module `bookmind_tutor/ingestion/table_extractor.py`
 
