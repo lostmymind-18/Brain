@@ -55,6 +55,7 @@ from bookmind_tutor.agents.strategies import (
     StrategyRouter,
 )
 from bookmind_tutor.agents.tools.book_outline import BookOutlineTool
+from bookmind_tutor.agents.tools.get_book_section import GetBookSectionTool
 from bookmind_tutor.agents.tools.graph_rag_search import GraphRAGSearchTool
 from bookmind_tutor.agents.verification import CitationVerifier, VerificationResult
 from bookmind_tutor.knowledge_graph.extractor import EntityExtractor
@@ -401,7 +402,8 @@ def _setup_agent() -> None:
     )
     search_tool = GraphRAGSearchTool(retriever=retriever)
     outline_tool = BookOutlineTool(vector_store=_current_vs())
-    harness = AgentHarness(llm_client=llm, tools=[outline_tool, search_tool])
+    section_tool = GetBookSectionTool(vector_store=_current_vs())
+    harness = AgentHarness(llm_client=llm, tools=[outline_tool, section_tool, search_tool])
     react = ReActStrategy(harness=harness)
     plan = PlanExecuteStrategy(harness=harness, llm_client=llm)
     reflexion = ReflexionStrategy(harness=harness, llm_client=llm)

@@ -246,7 +246,9 @@ class EvalRunner:
             ReflexionStrategy,
             StrategyRouter,
         )
+        from bookmind_tutor.agents.tools.get_book_section import GetBookSectionTool
         from bookmind_tutor.agents.tools.graph_rag_search import GraphRAGSearchTool
+        from bookmind_tutor.agents.tools.book_outline import BookOutlineTool
         from bookmind_tutor.knowledge_graph.graph_rag import GraphRAGRetriever
         from bookmind_tutor.llm import create_client
         from bookmind_tutor.tutor.qa_agent import QAAgent
@@ -260,8 +262,10 @@ class EvalRunner:
             graph_store=self._graph_store,
             k=5,
         )
-        tool = GraphRAGSearchTool(retriever=retriever)
-        harness = AgentHarness(llm_client=llm_client, tools=[tool])
+        search_tool = GraphRAGSearchTool(retriever=retriever)
+        outline_tool = BookOutlineTool(vector_store=self._vector_store)
+        section_tool = GetBookSectionTool(vector_store=self._vector_store)
+        harness = AgentHarness(llm_client=llm_client, tools=[outline_tool, section_tool, search_tool])
         react = ReActStrategy(harness=harness)
         plan = PlanExecuteStrategy(harness=harness, llm_client=llm_client)
         reflexion = ReflexionStrategy(harness=harness, llm_client=llm_client)

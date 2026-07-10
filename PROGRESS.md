@@ -4,6 +4,27 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## GetBookSectionTool - complete
+
+Structured retrieval by metadata filter to support chapter/part summarization
+(ad-hoc from conversation, no prior plan).
+
+- **New tool** (`agents/tools/get_book_section.py`): filter ChromaDB chunks by `chapter`
+  or `section` metadata field using case-insensitive substring match. Optional `page_from`/`page_to`
+  for page-range queries. Returns all matching chunks sorted by `page_start`, capped at 30 to
+  stay within context limits (with truncation note).
+- **Registered** in `agents/tools/__init__.py`; wired into `tutor/app.py` and `evaluation/runner.py`
+  alongside `book_outline` and `book_search`.
+- **14 new tests** (`tests/agents/test_get_book_section.py`). 345 tests passing total.
+- **E2E verified**: "tóm tắt nội dung chương 5" → LLM called `get_book_section` → 27873 chars
+  (full chapter) vs 5 chunks from `book_search`. Answer had 8 structured points covering all
+  major themes of Chapter 5.
+
+Design insight: "Part I" substring matches "Part II" — LLM should pass the full name copied
+from `book_outline` (e.g. "Part I.") for unambiguous filtering.
+
+---
+
 ## Hallucination Defense - complete
 
 Systematic 4-layer defense against hallucination (ref: `plans/greedy-enchanting-yeti.md`).
