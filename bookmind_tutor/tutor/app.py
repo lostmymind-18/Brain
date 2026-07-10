@@ -404,6 +404,9 @@ def _setup_agent() -> None:
     outline_tool = BookOutlineTool(vector_store=_current_vs())
     section_tool = GetBookSectionTool(vector_store=_current_vs())
     harness = AgentHarness(llm_client=llm, tools=[outline_tool, section_tool, search_tool])
+    # Kept so the chat handler can read tool.last_sources after each turn
+    # (the Sources panel shows what the agent actually retrieved).
+    st.session_state.retrieval_tools = [search_tool, section_tool]
     react = ReActStrategy(harness=harness)
     plan = PlanExecuteStrategy(harness=harness, llm_client=llm)
     reflexion = ReflexionStrategy(harness=harness, llm_client=llm)
@@ -462,6 +465,10 @@ def _handle_question(question: str) -> None:
 
     with st.chat_message("assistant"):
         force = _strategy_to_force(st.session_state.strategy_mode)
+        # Per-turn contract with retrieval tools: clear last_sources before the
+        # turn, read them after. See Tool.last_sources in agents/tools/base.py.
+        for tool in st.session_state.retrieval_tools:
+            tool.last_sources.clear()
         try:
             # st.write_stream() renders tokens as they arrive and returns the full string.
             answer = st.write_stream(
@@ -493,7 +500,14 @@ def _handle_question(question: str) -> None:
         # KG extraction temporarily disabled — skip suggester.suggest() to reduce latency.
         from bookmind_tutor.knowledge_graph.models import KGUpdateResult
         kg_result = KGUpdateResult(suggestions=[], already_known=[])
-        search_results = _current_vs().search(question, k=5)
+        # Sources = what the agent's tools actually retrieved this turn.
+        # (Previously this ran an independent semantic search on the question,
+        # which showed chunks the agent never read.)
+        search_results = [
+            ref
+            for tool in st.session_state.retrieval_tools
+            for ref in tool.last_sources
+        ]
 
         # Citation verification — runs after answer is complete.
         with st.spinner("Verifying citations..."):

@@ -182,6 +182,63 @@ Status: root cause confirmed, fix not yet implemented. Related earlier fix: tool
 
 ---
 
+### ~~get_book_section: field/contains interface leaks metadata schema to the LLM~~ (fixed)
+**File:** `bookmind_tutor/agents/tools/get_book_section.py`
+
+Root cause found while E2E-testing "Chuong 1 noi ve chu de gi?" with gpt-4o-mini.
+Three stacked problems:
+
+1. The tool required the LLM to pick a metadata `field` ("chapter" = part level, "section" = chapter level).
+   This naming is inverted relative to common usage, and the correct choice depends on book structure the LLM cannot see.
+2. In this book, Chapter 1 sits BEFORE Part I, so the structure detector placed it at part level: its 17 chunks (pages 21-40) live under `chapter='Chapter 1. Introduction'`, while their `section` values are subsections.
+   Calling `field='section', contains='Chapter 1'` therefore matched Chapters 10-19 (73k chars of wrong content) and never the real Chapter 1.
+3. The only section value containing "Introduction" was `'Chapter\xa01: Introduction'` from the Self-Assessment Questions appendix (page 393).
+   The model ended up summarizing Chapter 1 from the quiz page.
+
+Fix: redesign the tool interface around a single `section_name` parameter.
+The tool matches against DISTINCT heading values collected from BOTH metadata fields.
+Exactly one heading matches: return all its chunks.
+Multiple headings match: return a short disambiguation list (name, chunk count, page range) instead of dumping content.
+Zero match: return the list of available headings.
+This keeps the schema knowledge inside the tool where it belongs.
+
+Follow-up found during E2E: matching must also be punctuation-insensitive.
+gpt-4o-mini guessed 'Chapter 1: Introduction' (colon); the body heading uses a period and the appendix TOC uses a colon plus a non-breaking space, so the exact match hit only the appendix quiz page.
+Normalization now strips punctuation and collapses whitespace, grouping all spelling variants of a heading together.
+E2E result: one tool call, 44k chars of the real Chapter 1, 2 LLM calls total (down from 7), fact-check 4/5 verified.
+
+---
+
+### ~~Sources panel disconnected from agent retrieval~~ (fixed)
+**Files:** `bookmind_tutor/tutor/app.py`, `bookmind_tutor/agents/tools/base.py`,
+`get_book_section.py`, `graph_rag_search.py`
+
+Initial diagnosis blamed stale `_last_retrieved_chunks` ordering.
+The true root cause was simpler and worse: the Sources panel never showed agent retrieval at all.
+`app.py` ran an INDEPENDENT `_current_vs().search(question, k=5)` on the raw (Vietnamese) question and rendered those top-5 semantic hits as "Sources".
+Whatever tools the agent actually called was irrelevant to the panel.
+
+Fix: retrieval tools now record structured `SourceRef` entries (chapter, section, page range) in `Tool.last_sources` on each successful execute.
+The chat handler clears them before each turn and renders them after.
+The independent semantic search was removed.
+Sources now shows exactly what the agent read, and shows nothing when the agent retrieved nothing (honest for ungrounded answers).
+
+---
+
+### ~~Fact-check cross-language mismatch~~ (resolved - was a symptom, not a bug)
+**Context:** All fact-check claims showed "not found in retrieved excerpts" for Vietnamese answers.
+
+This turned out to be a downstream symptom of the get_book_section retrieval bug above:
+the verifier was checking claims against the WRONG chunks (appendix quiz page instead of the real chapter).
+With correct retrieval, the LLM verifier handles Vietnamese claims against English chunks fine.
+E2E confirmed: 4/5 claims verified with English evidence quotes, e.g.
+"Vai tro cua kien truc su phan mem da mo rong..." matched against
+"the role of software architect embodies a massive amount and scope of responsibility".
+
+No code change needed.
+
+---
+
 ### Table extraction (stretch goal)
 **File:** new module `bookmind_tutor/ingestion/table_extractor.py`
 

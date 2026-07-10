@@ -4,6 +4,31 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## GetBookSectionTool v2: single-name interface + honest Sources panel - complete
+
+Root-cause fix after E2E testing exposed systematic failures with gpt-4o-mini
+(ref: backlog.md "get_book_section: field/contains interface leaks metadata schema to the LLM"
+and "Sources panel disconnected from agent retrieval").
+
+- **Tool interface redesigned** (`agents/tools/get_book_section.py`): single `section_name`
+  parameter replaces `field` + `contains`. The tool matches against distinct heading values
+  from BOTH metadata fields (a chapter outside any part lands at part level, as Chapter 1 does
+  in "Fundamentals of Software Architecture"). Matching is case- and punctuation-insensitive,
+  so 'Chapter 1. Introduction', 'Chapter 1: Introduction', and 'Chapter\xa01: Introduction'
+  group as one heading. Ambiguous names return a disambiguation list (name, chunk count,
+  page range) instead of dumping wrong content; unknown names return the available headings.
+- **Honest Sources panel** (`agents/tools/base.py`, `graph_rag_search.py`, `tutor/app.py`):
+  new `SourceRef` dataclass; retrieval tools record what they retrieved in `Tool.last_sources`.
+  The chat handler clears them per turn and renders them after. Removed the independent
+  semantic search that previously populated Sources with chunks the agent never read.
+- **23 tests** in `tests/agents/test_get_book_section.py`. 353 tests passing total.
+- **E2E verified** ("Chuong 1 cua cuon sach noi ve chu de gi?", gpt-4o-mini):
+  1 tool call, 44k chars of real Chapter 1 (pages 21-40), 2 LLM calls / 23k tokens
+  (down from 7 calls / 63k tokens), Sources shows "Chapter 1. Introduction pp. 21-393",
+  fact-check 4/5 claims verified with cross-language evidence quotes.
+
+---
+
 ## GetBookSectionTool - complete
 
 Structured retrieval by metadata filter to support chapter/part summarization

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from bookmind_tutor.agents.models import ToolSpec
-from bookmind_tutor.agents.tools.base import Tool
+from bookmind_tutor.agents.tools.base import SourceRef, Tool
 from bookmind_tutor.knowledge_graph.graph_rag import GraphRAGRetriever
 
 
@@ -22,6 +22,7 @@ class GraphRAGSearchTool(Tool):
     def __init__(self, retriever: GraphRAGRetriever, k: int = 5) -> None:
         self._retriever = retriever
         self._k = k
+        self.last_sources: list[SourceRef] = []
 
     @property
     def spec(self) -> ToolSpec:
@@ -53,6 +54,11 @@ class GraphRAGSearchTool(Tool):
         results = self._retriever.search(query)
         if not results:
             return "No relevant passages found in the book."
+
+        self.last_sources.extend(
+            SourceRef(chapter=r.chapter, section=r.section, page_range=r.page_range)
+            for r in results
+        )
 
         best_score = results[0].score
         parts: list[str] = []
