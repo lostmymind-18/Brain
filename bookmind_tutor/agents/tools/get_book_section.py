@@ -28,11 +28,11 @@ Matching behavior:
 from __future__ import annotations
 
 import logging
-import re
 from collections import Counter
 
 from bookmind_tutor.agents.models import ToolSpec
 from bookmind_tutor.agents.tools.base import SourceRef, Tool
+from bookmind_tutor.ingestion.utils import normalize_heading as _normalize
 from bookmind_tutor.retrieval.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -42,24 +42,11 @@ logger = logging.getLogger(__name__)
 # The tool notes truncation in its output so the LLM can tell the user.
 _MAX_CHUNKS = 30
 
-# Metadata fields that hold heading names. `chapter` stores part-level
-# headings, `section` stores chapter-level headings, but front matter
-# and out-of-part chapters can land in either. Search both.
-_HEADING_FIELDS = ("chapter", "section")
-
-
-def _normalize(name: str) -> str:
-    """Lowercase, strip punctuation, and collapse whitespace.
-
-    Punctuation-insensitive matching is deliberate: the same chapter can appear
-    as 'Chapter 1. Introduction' (body heading) and 'Chapter\\xa01: Introduction'
-    (TOC/appendix heading), and LLMs guess either punctuation. Observed failure:
-    gpt-4o-mini asked for 'Chapter 1: Introduction' (colon) and exact-matched
-    only the appendix quiz page instead of the real chapter. After this
-    normalization both variants group under one heading.
-    """
-    cleaned = re.sub(r"[^\w\s]", " ", name.replace("\xa0", " ").lower())
-    return " ".join(cleaned.split())
+# Metadata fields that hold heading names. Searched in order of specificity.
+# `chapter` = part-level, `section` = chapter-level, `subsection` = L2 section.
+# Front matter and out-of-part chapters can land in any field, so all three
+# are searched.
+_HEADING_FIELDS = ("chapter", "section", "subsection")
 
 
 class GetBookSectionTool(Tool):
@@ -223,8 +210,13 @@ class GetBookSectionTool(Tool):
             )
 
         for page_start, doc, meta in chunks_to_show:
-            section = meta.get("section") or meta.get("chapter") or ""
-            loc = f"{section}, p.{page_start}" if section else f"p.{page_start}"
+            heading = (
+                meta.get("subsection")
+                or meta.get("section")
+                or meta.get("chapter")
+                or ""
+            )
+            loc = f"{heading}, p.{page_start}" if heading else f"p.{page_start}"
             parts.append(f"[{loc}]\n{doc}")
 
         logger.debug(

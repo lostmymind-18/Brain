@@ -82,6 +82,7 @@ class VectorStore:
                     {
                         "chapter": c.chapter or "",
                         "section": c.section or "",
+                        "subsection": c.subsection or "",
                         "page_start": c.page_range[0],
                         "page_end": c.page_range[1],
                     }
@@ -132,6 +133,7 @@ class VectorStore:
                 section=meta.get("section") or None,
                 page_range=(meta.get("page_start", 0), meta.get("page_end", 0)),
                 score=1.0 - dist,
+                subsection=meta.get("subsection") or None,
             ))
         return results
 
@@ -194,6 +196,7 @@ class VectorStore:
                 section=meta.get("section") or None,
                 page_range=(meta.get("page_start", 0), meta.get("page_end", 0)),
                 score=hybrid,
+                subsection=meta.get("subsection") or None,
             ))
 
         results.sort(key=lambda r: r.score, reverse=True)

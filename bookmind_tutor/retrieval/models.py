@@ -13,3 +13,4 @@ class SearchResult:
     section: str | None
     page_range: tuple[int, int]
     score: float  # cosine similarity; higher = more relevant
+    subsection: str | None = None  # L2 heading; None for older indexes without this field

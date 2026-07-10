@@ -239,6 +239,35 @@ No code change needed.
 
 ---
 
+### ~~Chunk size exceeds embedding model input limit~~ (fixed)
+**File:** `bookmind_tutor/ingestion/hierarchical_chunker.py`
+
+`all-MiniLM-L6-v2` truncates at 256 BPE tokens. Default lowered to `max_tokens=180`,
+`overlap_tokens=30`. Existing books need to be re-indexed for the fix to take effect.
+See PROGRESS.md (2026-07-11 entry) and `plans/structure_reconciler.md` step 1.
+
+---
+
+### ~~HierarchicalChunker discards detected L2 subsection titles~~ (fixed)
+**Files:** `bookmind_tutor/ingestion/hierarchical_chunker.py`, `models.py`
+
+Added `Chunk.subsection` field, propagated from level-2 nodes in `_chunk_node()`.
+Indexed as ChromaDB metadata. `get_book_section` now searches it via `_HEADING_FIELDS`.
+Existing books need to be re-indexed for subsection metadata to be populated.
+See PROGRESS.md (2026-07-11 entry) and `plans/structure_reconciler.md` step 2.
+
+---
+
+### ~~Structure reconciler: TOC anchors + heading candidates~~ (implemented)
+**Plan:** `plans/structure_reconciler.md`
+
+`StructureReconciler` (new `ingestion/structure_reconciler.py`) implemented.
+`StructureDetector` Tier 1 path now runs both TOC and Tier 3 heuristic, then passes
+both to the reconciler. See PROGRESS.md (2026-07-11 entry) for full details.
+Existing books need to be re-indexed.
+
+---
+
 ### Table extraction (stretch goal)
 **File:** new module `bookmind_tutor/ingestion/table_extractor.py`
 

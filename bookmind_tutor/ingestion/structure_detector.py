@@ -28,6 +28,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from .models import DocumentNode, DocumentTree, PageContent, TextSpan
+from .structure_reconciler import HeadingCandidate, StructureReconciler
 from bookmind_tutor.llm.base import LLMClient
 
 
@@ -114,10 +115,21 @@ class StructureDetector:
         if not pages:
             return DocumentTree(root_nodes=[])
 
-        # Tier 1: embedded PDF outline (free, 100% accurate when present)
+        # Tier 1: embedded PDF outline (free, 100% accurate when present).
+        # Also runs Tier 3 heuristic for sub-heading candidates and hands both
+        # to StructureReconciler, which injects L2/L3 nodes the TOC doesn't list.
         if toc and len(toc) >= 3:
             tree = self._build_tree_from_toc(toc, pages)
             if tree is not None:
+                body_size = self._estimate_body_size(pages)
+                if body_size is not None:
+                    candidates = self._extract_heading_candidates(pages, body_size)
+                    if candidates:
+                        reconciler = StructureReconciler(
+                            min_heading_pages=self.min_heading_pages,
+                            total_pages=len(pages),
+                        )
+                        tree = reconciler.reconcile(toc, candidates, tree, pages)
                 return tree
 
         # Tier 2: LLM parse of printed TOC page.
@@ -578,6 +590,55 @@ class StructureDetector:
         if _RE_ALL_CAPS.match(stripped) and len(stripped) <= 60 and len(stripped.split()) <= 6:
             return 0
         return None
+
+    # ------------------------------------------------------------------
+    # Tier 3: heading candidate extraction (used by both reconciler and tree builder)
+    # ------------------------------------------------------------------
+
+    def _extract_heading_candidates(
+        self,
+        pages: list[PageContent],
+        body_size: float,
+    ) -> list[HeadingCandidate]:
+        """
+        Classify all heading lines without building a tree.
+
+        Used by Tier 1 path: the embedded TOC anchors the top levels, and these
+        candidates supply the depth below that (L2/L3 sub-headings not in the TOC).
+        Ambiguous bold-only lines are included (is_ambiguous flag is not filtered
+        here — the false-positive filter in StructureReconciler handles them by
+        requiring the font size to appear on enough distinct pages).
+        """
+        heading_level_map = self._build_heading_level_map(pages, body_size)
+        candidates: list[HeadingCandidate] = []
+
+        for page in pages:
+            for line_spans in self._group_spans_into_lines(page.spans):
+                line_text = "".join(s.text for s in line_spans).strip()
+                if not line_text:
+                    continue
+                level, _ = self._classify_line_with_confidence(
+                    line_spans, body_size, heading_level_map
+                )
+                if level is None:
+                    continue
+
+                dominant_size = max(s.size for s in line_spans)
+                y_pos = (line_spans[0].bbox[1] + line_spans[0].bbox[3]) / 2
+                is_bold = any(
+                    "Bold" in s.font or "bold" in s.font or "Heavy" in s.font
+                    for s in line_spans
+                )
+                candidates.append(HeadingCandidate(
+                    text=line_text,
+                    page=page.page_number,
+                    font_size=dominant_size,
+                    bold=is_bold,
+                    y_pos=y_pos,
+                    level=level,
+                ))
+
+        return candidates
 
     # ------------------------------------------------------------------
     # Tier 3: heuristic tree building (two-phase when LLM available)

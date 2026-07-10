@@ -1,7 +1,24 @@
 """Utility helpers for inspecting ingestion pipeline output."""
 from __future__ import annotations
 
+import re
+
 from .models import DocumentNode, DocumentTree
+
+
+def normalize_heading(text: str) -> str:
+    """
+    Lowercase, strip punctuation, collapse whitespace.
+
+    Used for fuzzy heading matching so that "Chapter 1. Introduction" and
+    "Chapter 1: Introduction" and "CHAPTER 1 Introduction" all normalize to
+    the same string and can be matched against each other.
+
+    This is the shared normalization used by get_book_section (for tool
+    matching) and StructureReconciler (for TOC anchor matching).
+    """
+    cleaned = re.sub(r"[^\w\s]", " ", text.replace("\xa0", " ").lower())
+    return " ".join(cleaned.split())
 
 
 def print_tree(

@@ -66,3 +66,4 @@ class Chunk:
     page_range: tuple[int, int]
     char_offset_start: int
     char_offset_end: int
+    subsection: str | None = None  # L2 heading title; None for books without reconciler

@@ -4,6 +4,52 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## Hybrid Structure Reconciler + Chunk Size Fix + Subsection Metadata - complete
+
+Three interlinked ingestion improvements (ref: `plans/structure_reconciler.md`,
+backlog entries "Chunk size exceeds embedding model input limit",
+"HierarchicalChunker discards detected L2 subsection titles",
+"Structure reconciler: TOC anchors + heading candidates").
+
+- **Chunk size fix** (`ingestion/hierarchical_chunker.py`): default `max_tokens` lowered
+  512 → 180 words, `overlap_tokens` 50 → 30. all-MiniLM-L6-v2 truncates at 256 BPE tokens;
+  empirically 52.8% of FoSA chunks had un-embedded tails at the old default. New default
+  keeps all chunks under the truncation limit. Existing books must be re-indexed.
+
+- **`Chunk.subsection` field** (`ingestion/models.py`): new optional field (default None)
+  carries the L2 heading title. `HierarchicalChunker._chunk_node()` now propagates the
+  `subsection` parameter at level 2; level 3+ inherits. `VectorStore.index_chunks()` indexes
+  it as ChromaDB metadata. `GetBookSectionTool` searches it alongside `chapter` and `section`,
+  and displays it in chunk location labels. `SearchResult` also carries the field.
+
+- **`normalize_heading()`** (`ingestion/utils.py`): shared normalization (lowercase, strip
+  punctuation, collapse whitespace). `GetBookSectionTool._normalize()` now imports this
+  instead of defining its own copy.
+
+- **`StructureReconciler`** (new `ingestion/structure_reconciler.py`):
+  - Input: embedded TOC + `HeadingCandidate` list from Tier 3 font-size heuristic + anchor tree.
+  - Filters false positives: no-letter candidates, rare fonts (<min_heading_pages distinct pages),
+    candidates before the first TOC anchor page.
+  - Excludes TOC-level headings (normalized match against TOC title set).
+  - Injects survivors as child `DocumentNode`s under their anchor, redistributing `raw_text`
+    by splitting at the normalized heading line.
+  - Local font-size ranking per anchor to determine sub-level (no global clustering).
+  - Monotonic: returns anchor_tree unchanged when no candidates survive.
+
+- **`StructureDetector.detect()` (Tier 1 path extended)** (`ingestion/structure_detector.py`):
+  when an embedded TOC is present, now ALSO runs Tier 3 heuristic classification
+  via new `_extract_heading_candidates()` method, then passes both to `StructureReconciler`.
+  The Tier 2/Tier 3 fallback paths are unchanged.
+
+- **15 new tests** (`tests/ingestion/test_structure_reconciler.py`). 374 tests passing total.
+  Covers: false-positive filter (symbol, single-char, rare font), TOC match exclusion
+  (exact + punctuation variant), TOC anchor preservation, sub-heading injection,
+  level assignment, text redistribution, chunk subsection propagation.
+
+Next: re-index existing books to apply new chunk sizes and subsection metadata.
+
+---
+
 ## GetBookSectionTool v2: single-name interface + honest Sources panel - complete
 
 Root-cause fix after E2E testing exposed systematic failures with gpt-4o-mini

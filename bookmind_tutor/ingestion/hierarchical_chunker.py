@@ -6,9 +6,12 @@ Design decisions:
   mid-sentence. This adds a small startup cost (NLTK model download on first
   run) but is lighter than spaCy for this use case.
 - Token counting: we use whitespace-split word count as an approximation for
-  BPE tokens. Actual BPE token counts are ~1.3x word count for English prose,
-  so setting max_tokens=512 gives roughly 390-word chunks. This is close enough
-  for retrieval purposes without adding a tokenizer dependency.
+  BPE tokens. Actual BPE token counts are ~1.3x word count for English prose.
+  Default max_tokens=180 (~138 BPE) stays safely under all-MiniLM-L6-v2's
+  256 BPE truncation limit (measured empirically: embeddings of texts that
+  differ only after ~255 whitespace tokens are byte-identical, i.e. the tail
+  is silently discarded). The previous default of 512 caused 52.8% of FoSA
+  chunks to have un-embedded tails.
 - Overlap: the last overlap_tokens words of each chunk are repeated at the
   start of the next chunk so that context that spans a chunk boundary is still
   retrievable in full.
@@ -53,7 +56,7 @@ class HierarchicalChunker:
         overlap_tokens: Token overlap between consecutive chunks (default 50).
     """
 
-    def __init__(self, max_tokens: int = 512, overlap_tokens: int = 50) -> None:
+    def __init__(self, max_tokens: int = 180, overlap_tokens: int = 30) -> None:
         self.max_tokens = max_tokens
         self.overlap_tokens = overlap_tokens
         _ensure_nltk_punkt()
@@ -68,7 +71,8 @@ class HierarchicalChunker:
         for node in tree.root_nodes:
             chapter = node.title if node.level == 0 else None
             section = node.title if node.level == 1 else None
-            chunks.extend(self._chunk_node(node, chapter=chapter, section=section))
+            subsection = node.title if node.level == 2 else None
+            chunks.extend(self._chunk_node(node, chapter=chapter, section=section, subsection=subsection))
         return chunks
 
     # ------------------------------------------------------------------
@@ -80,27 +84,33 @@ class HierarchicalChunker:
         node: DocumentNode,
         chapter: str | None,
         section: str | None,
+        subsection: str | None = None,
     ) -> list[Chunk]:
         chunks: list[Chunk] = []
 
         # Chunk this node's own text (text that belongs directly to it, not to children)
         if node.raw_text.strip():
             chunks.extend(
-                self._split_text(node.raw_text, chapter, section, node.page_range)
+                self._split_text(node.raw_text, chapter, section, subsection, node.page_range)
             )
 
-        # Recurse into children, propagating chapter/section metadata
+        # Recurse into children, propagating chapter/section/subsection metadata
         for child in node.children:
             if child.level == 0:
-                child_chapter, child_section = child.title, None
+                child_chapter, child_section, child_subsection = child.title, None, None
             elif child.level == 1:
                 child_chapter = chapter  # inherit ancestor chapter
                 child_section = child.title
+                child_subsection = None
+            elif child.level == 2:
+                child_chapter = chapter
+                child_section = section
+                child_subsection = child.title
             else:
-                # Subsection (level 2) or deeper: inherit both from ancestor
-                child_chapter, child_section = chapter, section
+                # Level 3+: inherit all from ancestor
+                child_chapter, child_section, child_subsection = chapter, section, subsection
 
-            chunks.extend(self._chunk_node(child, child_chapter, child_section))
+            chunks.extend(self._chunk_node(child, child_chapter, child_section, child_subsection))
 
         return chunks
 
@@ -113,6 +123,7 @@ class HierarchicalChunker:
         text: str,
         chapter: str | None,
         section: str | None,
+        subsection: str | None,
         page_range: tuple[int, int],
     ) -> list[Chunk]:
         sentences = nltk.sent_tokenize(text)
@@ -133,7 +144,7 @@ class HierarchicalChunker:
                     self._make_chunk(
                         text, sentences, positions,
                         chunk_start_idx, i - 1,
-                        chapter, section, page_range,
+                        chapter, section, subsection, page_range,
                     )
                 )
                 chunk_start_idx = self._compute_overlap_start(
@@ -152,7 +163,7 @@ class HierarchicalChunker:
                 self._make_chunk(
                     text, sentences, positions,
                     chunk_start_idx, len(sentences) - 1,
-                    chapter, section, page_range,
+                    chapter, section, subsection, page_range,
                 )
             )
 
@@ -219,6 +230,7 @@ class HierarchicalChunker:
         end_idx: int,
         chapter: str | None,
         section: str | None,
+        subsection: str | None,
         page_range: tuple[int, int],
     ) -> Chunk:
         char_start = positions[start_idx][0]
@@ -233,6 +245,7 @@ class HierarchicalChunker:
             page_range=page_range,
             char_offset_start=char_start,
             char_offset_end=char_end,
+            subsection=subsection,
         )
 
     @staticmethod
