@@ -268,6 +268,19 @@ Existing books need to be re-indexed.
 
 ---
 
+### ~~Search layer does not exploit new subsection metadata~~ (fixed)
+**Files:** `agents/tools/book_search.py`, `graph_rag_search.py`, `book_outline.py`,
+`base.py` (SourceRef), `tutor/app.py`, `retrieval/vector_store.py`
+
+All four gaps plus the contextual-embedding upgrade implemented 2026-07-11:
+subsection in location labels, 3-level book_outline, SourceRef.subsection + UI,
+and contextual embedding (heading breadcrumb prepended at embedding/BM25 time,
+stored text stays clean; chunker max_tokens 180 -> 160 for breadcrumb headroom).
+Both books re-indexed. E2E verified with Playwright.
+See PROGRESS.md "Search layer subsection support + contextual embedding".
+
+---
+
 ### Table extraction (stretch goal)
 **File:** new module `bookmind_tutor/ingestion/table_extractor.py`
 

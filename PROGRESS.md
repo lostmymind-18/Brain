@@ -4,6 +4,41 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## Search layer subsection support + contextual embedding - complete
+
+Follow-up to the structure reconciler: the search layer did not exploit the new
+subsection metadata (ref: backlog.md "Search layer does not exploit new subsection metadata").
+
+- **Contextual embedding** (`retrieval/vector_store.py`): chunks are now EMBEDDED
+  (and BM25-tokenized) with their heading breadcrumb prepended
+  ("Chapter > Section > Subsection\n<text>"), while the STORED document text stays
+  clean for display. `index_chunks()` computes embeddings explicitly from the context
+  text; `_get_bm25()` tokenizes context text so heading words are searchable even when
+  absent from the chunk body. Lightweight version of Anthropic's contextual retrieval -
+  the context comes free from structure detection instead of an LLM call.
+- **Chunk size** (`ingestion/hierarchical_chunker.py`): default `max_tokens` 180 -> 160
+  to leave headroom for the breadcrumb under the ~195-word embedding truncation point.
+- **`book_outline` 3 levels** (`agents/tools/book_outline.py`): outline now includes
+  subsections, so the LLM can discover exact heading names for `get_book_section`
+  (previously 113 FoSA subsection names were matchable but undiscoverable).
+- **Location labels** (`book_search.py`, `graph_rag_search.py`): search excerpts now
+  labeled "Chapter / Section / Subsection, p.X" so answers can cite at subsection precision.
+- **`SourceRef.subsection`** (`agents/tools/base.py`, `tutor/app.py`): Sources panel
+  shows "Chapter › Subsection" - a page-precise heading the user can look up in the book.
+- **12 new tests** (contextual embedding, breadcrumb format, clean stored text,
+  book_outline nesting, subsection labels). 386 tests passing total.
+- **Re-indexed** both books (FoSA 1022 chunks, DDIA 2112).
+- **Measured** (FoSA spot-check, k=3): heading-name queries all hit labeled chunks in
+  top-3 (Broker Topology 0.811, Risk Storming 0.850, ADR 0.857); "fitness functions"
+  query now retrieves the real content (p.103) instead of the appendix quiz page (p.395).
+  Avg on the 5 mixed queries: 0.760 vs 0.750 original - raw cosine is not the story;
+  result relevance is.
+- **E2E verified** (Playwright, gpt-4o-mini): "Mediator topology hoạt động như thế nào?"
+  -> grounded answer citing Chapter 14 p.205, fact-check 5/5 verified, Sources shows
+  "Part II. Architecture Styles › Mediator Topology · pp. 205-215". Zero console errors.
+
+---
+
 ## Hybrid Structure Reconciler + Chunk Size Fix + Subsection Metadata - complete
 
 Three interlinked ingestion improvements (ref: `plans/structure_reconciler.md`,

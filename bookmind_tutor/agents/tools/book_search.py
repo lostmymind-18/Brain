@@ -65,8 +65,9 @@ class BookSearchTool(Tool):
 
         for i, r in enumerate(results, 1):
             chapter = r.chapter or "unknown chapter"
-            section = r.section
-            loc = f"{chapter}" + (f" / {section}" if section else "")
+            loc = chapter + (f" / {r.section}" if r.section else "")
+            if r.subsection:
+                loc += f" / {r.subsection}"
             loc += f", p.{r.page_range[0]}"
             parts.append(f"[{i}] ({loc})\n{r.text}")
 

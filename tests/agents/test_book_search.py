@@ -63,3 +63,16 @@ class TestBookSearchTool:
         result = tool.execute(query="content")
         assert "Intro" in result
         assert "[1]" in result
+
+    def test_execute_subsection_in_location_label(self):
+        store = VectorStore(persist_dir=None)
+        chunk = Chunk(
+            chunk_id="c1", text="Events flow between processors.",
+            chapter="Chapter 14", section="Topologies",
+            page_range=(380, 380), char_offset_start=0, char_offset_end=31,
+            subsection="Broker Topology",
+        )
+        store.index_chunks([chunk])
+        tool = BookSearchTool(store, k=1)
+        result = tool.execute(query="events processors")
+        assert "Chapter 14 / Topologies / Broker Topology" in result

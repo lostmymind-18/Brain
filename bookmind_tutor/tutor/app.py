@@ -610,12 +610,12 @@ def _render_trace(trace) -> None:
 def _render_sources(sources: list) -> None:
     if not sources:
         return
-    # Deduplicate by (chapter, page_range) — same chunk can appear twice at
-    # different similarity scores if graph expansion doubled it.
+    # Deduplicate by (chapter, subsection, page_range) — same chunk can appear
+    # twice at different similarity scores if graph expansion doubled it.
     seen: set[tuple] = set()
     unique = []
     for s in sources:
-        key = (s.chapter, s.page_range)
+        key = (s.chapter, getattr(s, "subsection", None), s.page_range)
         if key not in seen:
             seen.add(key)
             unique.append(s)
@@ -625,6 +625,11 @@ def _render_sources(sources: list) -> None:
             p_start, p_end = s.page_range
             page_str = f"p. {p_start}" if p_start == p_end else f"pp. {p_start}-{p_end}"
             label = s.chapter or "Unknown section"
+            # Subsection gives the user a page-precise heading to look up in
+            # the physical book; chapter alone can span 40+ pages.
+            subsection = getattr(s, "subsection", None)
+            if subsection:
+                label = f"{label} › {subsection}"
             st.caption(f"**{label}** · {page_str}")
 
 

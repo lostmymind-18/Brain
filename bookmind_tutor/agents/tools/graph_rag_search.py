@@ -56,7 +56,12 @@ class GraphRAGSearchTool(Tool):
             return "No relevant passages found in the book."
 
         self.last_sources.extend(
-            SourceRef(chapter=r.chapter, section=r.section, page_range=r.page_range)
+            SourceRef(
+                chapter=r.chapter,
+                section=r.section,
+                page_range=r.page_range,
+                subsection=r.subsection,
+            )
             for r in results
         )
 
@@ -73,6 +78,8 @@ class GraphRAGSearchTool(Tool):
         for i, r in enumerate(results, 1):
             chapter = r.chapter or "unknown chapter"
             loc = chapter + (f" / {r.section}" if r.section else "")
+            if r.subsection:
+                loc += f" / {r.subsection}"
             loc += f", p.{r.page_range[0]}"
             parts.append(f"[{i}] ({loc})\n{r.text}")
 

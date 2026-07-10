@@ -145,7 +145,102 @@ a different approach.
 
 ---
 
-## 7. Python venv symlink confusion
+## 7. Metadata is only as valuable as the layers that consume it
+
+After the reconciler landed, 113 FoSA subsection names existed in ChromaDB metadata -
+and were almost entirely wasted.
+An audit of the search layer found four consumers that ignored the new field:
+
+1. Search result labels showed only chapter/section, so the LLM could not cite at
+   subsection precision.
+2. `book_outline` did not list subsections, so the agent could never DISCOVER the
+   names that `get_book_section` was able to match.
+   The metadata was matchable but unreachable - a tool chain is only as good as its
+   weakest discovery link.
+3. `SourceRef` had no subsection field, so the UI Sources panel stayed chapter-level.
+4. The embeddings themselves knew nothing about the headings (see lesson 8).
+
+**Lesson:** When adding a metadata field to a pipeline, walk every downstream consumer
+and ask "does this layer need the new field?"
+The gap between "data exists" and "data is used" is invisible - nothing errors,
+nothing warns, the system just silently underperforms.
+The audit question that found all four gaps: "với metadata được cải thiện, có cần
+chỉnh sửa gì ở search không?"
+
+---
+
+## 8. Contextual embedding: separate the retrieval representation from the display text
+
+A chunk inside the "Broker Topology" subsection that never contains the word "broker"
+is invisible to the query "broker topology" - the embedding only represents the words
+in the chunk body.
+
+Fix: prepend the heading breadcrumb ("Chapter 14 > Topologies > Broker Topology")
+to the text **at embedding and BM25-tokenization time**, while storing the clean text
+as the document.
+ChromaDB supports this directly: pass explicit `embeddings=` computed from the context
+text alongside clean `documents=` - provided embeddings are used as-is, documents are
+not re-embedded.
+
+This is a lightweight version of Anthropic's "contextual retrieval" technique.
+The full version uses an LLM call per chunk to generate situating context;
+here the context comes free from structure detection.
+
+Two design points that mattered:
+- **The stored text stays clean.** The breadcrumb is a retrieval representation,
+  not content. Location labels are added by tools at format time; baking them into
+  the text would duplicate them and pollute every downstream consumer (fact-check,
+  KG extraction).
+- **Budget interaction:** breadcrumb (~10-20 words) + chunk text must stay under the
+  embedding model's ~195-word truncation point, so `max_tokens` went 180 -> 160.
+  Every addition to the embedded text spends the same fixed budget.
+
+Measured result: heading-name queries ("Risk Storming", "Broker Topology",
+"Architecture Decision Records") all hit correctly-labeled chunks in top-3.
+The "fitness function" query stopped retrieving the appendix quiz page (p.395)
+and started retrieving the real content (p.103).
+
+---
+
+## 9. Raw similarity scores do not measure retrieval quality across index versions
+
+Comparing average top-1 cosine scores between the old and new index (0.795 vs 0.760)
+suggested a regression.
+Looking at WHAT was retrieved showed the opposite:
+the old index's "high-scoring" hit for "fitness functions" was the appendix
+self-assessment quiz page; the new index's "lower-scoring" hit was the actual
+Governance and Fitness Functions content.
+
+Two reasons scores are incomparable across index versions:
+- Different embeddings (breadcrumb changes every document vector) shift the score
+  distribution wholesale.
+- Hybrid fusion normalizes BM25 by the max score in the candidate set, so scores
+  depend on `k` and on what else is in the index.
+  (A score of exactly 0.500 with alpha=0.5 is the fingerprint of a BM25-only hit
+  that dense search never surfaced - useful for debugging fusion behavior.)
+
+**Lesson:** For retrieval changes, evaluate "did the RIGHT chunk surface" (labeled-hit
+checks, content inspection), not score deltas.
+Scores are only comparable within a single index version and query configuration.
+
+---
+
+## 10. Always verify which server instance you are testing against
+
+Playwright E2E against localhost:8501 initially showed the OLD Sources panel
+(no subsection).
+Root cause: a Streamlit instance from the previous day was still running on 8501;
+the newly launched instance logged "Port 8501 is not available" and died.
+The test was hitting day-old code while the log quietly recorded the failure.
+
+**Lesson:** After starting a server for E2E verification, confirm the startup log
+shows a successful bind (not just that the port responds - anything could be
+listening there).
+An HTTP 200 from the right port is not proof that YOUR code is serving it.
+
+---
+
+## 11. Python venv symlink confusion
 
 When a venv is created with `python3.12`, the venv's `python` symlink may still
 point to the system default Python (3.14 in this case, which was broken due to a

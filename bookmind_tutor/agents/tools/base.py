@@ -20,6 +20,7 @@ class SourceRef:
     chapter: str | None
     section: str | None
     page_range: tuple[int, int]
+    subsection: str | None = None  # L2 heading; None for pre-subsection indexes
 
 
 class Tool(ABC):

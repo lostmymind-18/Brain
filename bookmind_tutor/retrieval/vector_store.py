@@ -6,6 +6,13 @@ so no external embedding API key is required.
 
 Search uses hybrid BM25 + dense vector fusion (rank_bm25 package required).
 Falls back to pure cosine similarity if rank_bm25 is not installed.
+
+Contextual embedding: chunks are EMBEDDED (and BM25-tokenized) with their heading
+breadcrumb prepended ("Chapter > Section > Subsection\\n<text>"), while the STORED
+document text stays clean for display. This makes a chunk inside "Broker Topology"
+findable by the query "broker topology" even when the chunk text never contains
+those words. A lightweight version of Anthropic's contextual retrieval technique -
+the context comes free from structure detection instead of an LLM call.
 """
 from __future__ import annotations
 
@@ -22,6 +29,23 @@ from bookmind_tutor.retrieval.models import SearchResult
 logger = logging.getLogger(__name__)
 
 _DEFAULT_EF = embedding_functions.DefaultEmbeddingFunction()
+
+
+def _context_text(
+    text: str,
+    chapter: str | None,
+    section: str | None,
+    subsection: str | None,
+) -> str:
+    """
+    Prepend the heading breadcrumb to text for embedding / BM25 tokenization.
+
+    The breadcrumb (~10-20 words) plus the chunk text must stay under the
+    embedding model's ~195-word truncation point; the chunker's max_tokens
+    default (160) leaves headroom for this.
+    """
+    crumbs = " > ".join(x for x in (chapter, section, subsection) if x)
+    return f"{crumbs}\n{text}" if crumbs else text
 
 
 class VectorStore:
@@ -68,6 +92,11 @@ class VectorStore:
 
         Uses upsert so re-indexing the same PDF is idempotent.
         Chunks are batched in groups of 100 to stay within ChromaDB limits.
+
+        Embeddings are computed from the CONTEXT text (heading breadcrumb +
+        chunk text) and passed explicitly, while `documents` stores the clean
+        chunk text. ChromaDB uses provided embeddings as-is and does not
+        re-embed the documents.
         """
         if not chunks:
             return
@@ -75,9 +104,14 @@ class VectorStore:
         batch_size = 100
         for start in range(0, len(chunks), batch_size):
             batch = chunks[start : start + batch_size]
+            context_docs = [
+                _context_text(c.text, c.chapter, c.section, c.subsection)
+                for c in batch
+            ]
             self._collection.upsert(
                 ids=[c.chunk_id for c in batch],
                 documents=[c.text for c in batch],
+                embeddings=_DEFAULT_EF(context_docs),
                 metadatas=[
                     {
                         "chapter": c.chapter or "",
@@ -219,12 +253,22 @@ class VectorStore:
             logger.debug("rank_bm25 not installed — falling back to pure dense search")
             return None
 
-        raw = self._collection.get(include=["documents"])
+        raw = self._collection.get(include=["documents", "metadatas"])
         if not raw["ids"]:
             return None
 
         self._bm25_ids = raw["ids"]
-        tokenized = [doc.lower().split() for doc in raw["documents"]]
+        # Tokenize the context text (breadcrumb + body) so heading words are
+        # searchable even when they never appear in the chunk body.
+        tokenized = [
+            _context_text(
+                doc,
+                meta.get("chapter"),
+                meta.get("section"),
+                meta.get("subsection"),
+            ).lower().split()
+            for doc, meta in zip(raw["documents"], raw["metadatas"])
+        ]
         self._bm25 = BM25Okapi(tokenized)
         logger.debug("BM25 index built: %d documents", len(self._bm25_ids))
         return self._bm25

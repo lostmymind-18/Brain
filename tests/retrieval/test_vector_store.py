@@ -2,11 +2,12 @@
 import pytest
 
 from bookmind_tutor.ingestion.models import Chunk
-from bookmind_tutor.retrieval.vector_store import VectorStore
+from bookmind_tutor.retrieval.vector_store import VectorStore, _context_text
 
 
 def _make_chunk(chunk_id: str, text: str, chapter: str | None = None,
-                section: str | None = None, page: int = 1) -> Chunk:
+                section: str | None = None, page: int = 1,
+                subsection: str | None = None) -> Chunk:
     return Chunk(
         chunk_id=chunk_id,
         text=text,
@@ -15,6 +16,7 @@ def _make_chunk(chunk_id: str, text: str, chapter: str | None = None,
         page_range=(page, page),
         char_offset_start=0,
         char_offset_end=len(text),
+        subsection=subsection,
     )
 
 
@@ -100,3 +102,49 @@ class TestVectorStoreSearch:
         results = store.search("data replication on multiple machines", k=2)
         if len(results) == 2:
             assert results[0].score >= results[1].score
+
+    def test_search_result_has_subsection(self, store):
+        chunk = _make_chunk("c1", "Events flow through the mesh.",
+                            chapter="Chapter 14", section="Topologies",
+                            subsection="Broker Topology", page=380)
+        store.index_chunks([chunk])
+        results = store.search("broker", k=1)
+        assert results[0].subsection == "Broker Topology"
+
+
+class TestContextualEmbedding:
+    def test_context_text_prepends_breadcrumb(self):
+        out = _context_text("Body.", "Chapter 14", "Topologies", "Broker Topology")
+        assert out == "Chapter 14 > Topologies > Broker Topology\nBody."
+
+    def test_context_text_skips_missing_levels(self):
+        assert _context_text("Body.", "Chapter 1", None, None) == "Chapter 1\nBody."
+        assert _context_text("Body.", None, None, None) == "Body."
+
+    def test_heading_query_finds_chunk_without_heading_words(self, store):
+        """
+        The core value of contextual embedding: a chunk whose BODY never
+        mentions its heading must still be findable by the heading name.
+        """
+        chunks = [
+            _make_chunk(
+                "target",
+                "The event flows to the next processor in the chain, and each "
+                "processor advertises what it has done to the rest of the system.",
+                chapter="Chapter 14. Event-Driven Architecture",
+                subsection="Broker Topology",
+            ),
+            _make_chunk("distractor", "Databases store rows in tables with indexes."),
+        ]
+        store.index_chunks(chunks)
+        results = store.search("broker topology", k=1)
+        assert results[0].chunk_id == "target"
+
+    def test_stored_document_text_stays_clean(self, store):
+        """The breadcrumb must NOT leak into the text shown to the LLM/user."""
+        chunk = _make_chunk("c1", "Plain body text.",
+                            chapter="Chapter 1", subsection="Some Heading")
+        store.index_chunks([chunk])
+        results = store.search("plain body", k=1)
+        assert results[0].text == "Plain body text."
+        assert "Chapter 1 >" not in results[0].text

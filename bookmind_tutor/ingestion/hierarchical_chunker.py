@@ -7,11 +7,13 @@ Design decisions:
   run) but is lighter than spaCy for this use case.
 - Token counting: we use whitespace-split word count as an approximation for
   BPE tokens. Actual BPE token counts are ~1.3x word count for English prose.
-  Default max_tokens=180 (~138 BPE) stays safely under all-MiniLM-L6-v2's
-  256 BPE truncation limit (measured empirically: embeddings of texts that
-  differ only after ~255 whitespace tokens are byte-identical, i.e. the tail
-  is silently discarded). The previous default of 512 caused 52.8% of FoSA
-  chunks to have un-embedded tails.
+  all-MiniLM-L6-v2 truncates at 256 BPE (~195 prose words), measured
+  empirically: embeddings of texts that differ only after that point are
+  byte-identical, i.e. the tail is silently discarded. The original default
+  of 512 caused 52.8% of FoSA chunks to have un-embedded tails.
+  Default max_tokens=160 leaves ~35 words of headroom for the heading
+  breadcrumb that VectorStore prepends at embedding time (contextual
+  embedding), keeping breadcrumb + text under the truncation point.
 - Overlap: the last overlap_tokens words of each chunk are repeated at the
   start of the next chunk so that context that spans a chunk boundary is still
   retrievable in full.
@@ -52,11 +54,11 @@ class HierarchicalChunker:
     metadata inherited from their ancestors.
 
     Args:
-        max_tokens: Maximum whitespace-token count per chunk (default 512).
-        overlap_tokens: Token overlap between consecutive chunks (default 50).
+        max_tokens: Maximum whitespace-token count per chunk (default 160).
+        overlap_tokens: Token overlap between consecutive chunks (default 30).
     """
 
-    def __init__(self, max_tokens: int = 180, overlap_tokens: int = 30) -> None:
+    def __init__(self, max_tokens: int = 160, overlap_tokens: int = 30) -> None:
         self.max_tokens = max_tokens
         self.overlap_tokens = overlap_tokens
         _ensure_nltk_punkt()
