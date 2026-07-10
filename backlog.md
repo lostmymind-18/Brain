@@ -327,10 +327,55 @@ RAG remains the right choice by objective.
 
 ---
 
-### Table extraction (stretch goal)
+## Beyond the roadmap - closing the SoTA gap
+
+Gap analysis done 2026-07-11 (session: "đã có thể coi là SoTA chưa?").
+Assessment: modern architecture patterns with deliberately modest components.
+The 6 retrieval upgrades above are the near-term path; the items below are the
+larger jumps. All are outside the 13-week roadmap scope - schedule explicitly.
+
+### Long-context baseline: whole book in prompt vs RAG
+**Reference:** Anthropic contextual-retrieval article ("under ~200k tokens, skip RAG")
+
+For book QA, the honest SoTA competitor to our entire pipeline is: put the whole
+book in the prompt with caching. FoSA is borderline (~200k tokens), DDIA is above.
+Experiment: run the retrieval eval set (backlog item 1 above) against a
+long-context baseline; compare quality, cost per question, latency.
+Whatever the result, it is strong interview material: either RAG wins measurably,
+or we know exactly when it does not. Depends on: retrieval eval set.
+
+---
+
+### GraphRAG full variant: community detection + hierarchical summaries
+**Files:** `knowledge_graph/graph_rag.py`, `graph_store.py`
+**Reference:** Microsoft GraphRAG (community detection via Leiden + community summaries)
+
+Current implementation is a lightweight variant: entity-based query expansion only.
+It cannot answer global/thematic questions ("what are the main themes of this book?",
+"how do the ideas in Part I connect to Part III?") - chunk RAG is structurally
+blind to them and book_outline only covers structure, not synthesis.
+Full variant: cluster the entity graph into communities, LLM-summarize each
+community at ingest time, retrieve community summaries for global questions.
+Cost: one-time LLM pass per book. Router decides chunk-RAG vs community-RAG per query.
+
+---
+
+### Table and figure extraction (upgraded from stretch goal)
 **File:** new module `bookmind_tutor/ingestion/table_extractor.py`
 
-Tables are currently skipped (PyMuPDF block type 1 = image, type 0 = text - tables in PDF are often rendered as text blocks with irregular spacing or as images).
-PyMuPDF has a `page.find_tables()` API that can extract structured table data.
+Tables are currently skipped entirely; figures too. Both books are technical -
+DDIA's figures carry real explanatory weight.
+- Tables: PyMuPDF `page.find_tables()` -> markdown text in chunks.
+- Figures: extract images at ingest, one VLM call each for a text description,
+  index the description as a chunk with a figure reference.
+This is the largest content-coverage gap: a chunk of the books' information
+simply does not exist in our index today.
 
-Deferred per roadmap: not needed until evaluation or KG work requires it.
+---
+
+### Late-interaction / visual retrieval (exploratory)
+
+If the embedding model upgrade (retrieval item 6) happens, also evaluate
+late-interaction retrievers (ColBERT-style) and visual retrieval (ColPali) which
+skip text extraction entirely by embedding page images.
+Exploratory - only worth it after the eval set exists to judge the trade-off.
