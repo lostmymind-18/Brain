@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "book_id": "designing_data_intensive_applications",
+  "book_name": "Designing Data-Intensive Applications - Martin Kleppmann",
+  "notes": "Section names use the book's actual chapter labels after indexing. Verify with book_outline before running.",
+  "queries": [
+    {
+      "id": "ddia01",
+      "query": "reliability scalability maintainability data systems properties",
+      "expected_sections": ["Chapter 1. Reliable, Scalable, and Maintainable Applications"],
+      "notes": "Opening chapter defining the three core properties"
+    },
+    {
+      "id": "ddia02",
+      "query": "data models relational document graph SQL NoSQL",
+      "expected_sections": ["Chapter 2. Data Models and Query Languages"],
+      "notes": "Chapter 2 compares relational vs document vs graph models"
+    },
+    {
+      "id": "ddia03",
+      "query": "storage engines B-tree LSM tree log-structured merge SSTables",
+      "expected_sections": ["Chapter 3. Storage and Retrieval"],
+      "notes": "Core storage engine internals"
+    },
+    {
+      "id": "ddia04",
+      "query": "column-oriented storage columnar compression analytics OLAP",
+      "expected_sections": ["Chapter 3. Storage and Retrieval"],
+      "notes": "OLAP vs OLTP and column stores"
+    },
+    {
+      "id": "ddia05",
+      "query": "encoding serialization Thrift Protobuf Avro schema evolution",
+      "expected_sections": ["Chapter 4. Encoding and Evolution"],
+      "notes": "Forward and backward compatibility in encoding"
+    },
+    {
+      "id": "ddia06",
+      "query": "replication leader follower synchronous asynchronous lag",
+      "expected_sections": ["Chapter 5. Replication"],
+      "notes": "Leader-based replication basics"
+    },
+    {
+      "id": "ddia07",
+      "query": "read-your-writes monotonic reads consistent prefix replication lag",
+      "expected_sections": ["Chapter 5. Replication"],
+      "notes": "Replication lag anomalies and consistency guarantees"
+    },
+    {
+      "id": "ddia08",
+      "query": "multi-leader replication conflict resolution write conflicts",
+      "expected_sections": ["Chapter 5. Replication"],
+      "notes": "Multi-leader conflict resolution strategies"
+    },
+    {
+      "id": "ddia09",
+      "query": "partitioning sharding hot spots key range hash partitioning",
+      "expected_sections": ["Chapter 6. Partitioning"],
+      "notes": "Partitioning strategies and skew"
+    },
+    {
+      "id": "ddia10",
+      "query": "transactions ACID atomicity consistency isolation durability",
+      "expected_sections": ["Chapter 7. Transactions"],
+      "notes": "ACID properties explained"
+    },
+    {
+      "id": "ddia11",
+      "query": "isolation levels read committed repeatable read serializability",
+      "expected_sections": ["Chapter 7. Transactions"],
+      "notes": "Weak isolation levels and their anomalies"
+    },
+    {
+      "id": "ddia12",
+      "query": "two-phase locking pessimistic concurrency serializable snapshot isolation",
+      "expected_sections": ["Chapter 7. Transactions"],
+      "notes": "Implementing serializability"
+    },
+    {
+      "id": "ddia13",
+      "query": "distributed systems faults partial failures unreliable networks",
+      "expected_sections": ["Chapter 8. The Trouble with Distributed Systems"],
+      "notes": "Why distributed systems are hard"
+    },
+    {
+      "id": "ddia14",
+      "query": "truth majority quorum fencing tokens locks leases",
+      "expected_sections": ["Chapter 8. The Trouble with Distributed Systems"],
+      "notes": "Truth in distributed systems - fencing tokens"
+    },
+    {
+      "id": "ddia15",
+      "query": "consistency guarantees linearizability happens-before causality",
+      "expected_sections": ["Chapter 9. Consistency and Consensus"],
+      "notes": "Strong consistency and linearizability"
+    },
+    {
+      "id": "ddia16",
+      "query": "consensus Raft Paxos leader election fault-tolerant",
+      "expected_sections": ["Chapter 9. Consistency and Consensus"],
+      "notes": "Consensus algorithms"
+    },
+    {
+      "id": "ddia17",
+      "query": "CAP theorem CP AP partition tolerance availability",
+      "expected_sections": ["Chapter 9. Consistency and Consensus"],
+      "notes": "CAP theorem and its nuances"
+    },
+    {
+      "id": "ddia18",
+      "query": "batch processing MapReduce Hadoop workflows joins",
+      "expected_sections": ["Chapter 10. Batch Processing"],
+      "notes": "MapReduce and batch processing paradigm"
+    },
+    {
+      "id": "ddia19",
+      "query": "stream processing event time processing time watermarks windowing",
+      "expected_sections": ["Chapter 11. Stream Processing"],
+      "notes": "Stream processing and time semantics"
+    },
+    {
+      "id": "ddia20",
+      "query": "change data capture CDC log-based messaging event sourcing",
+      "expected_sections": ["Chapter 11. Stream Processing"],
+      "notes": "CDC and event sourcing patterns"
+    },
+    {
+      "id": "ddia21",
+      "query": "data warehouse ETL star schema OLAP cube aggregation",
+      "expected_sections": ["Chapter 3. Storage and Retrieval"],
+      "notes": "Data warehousing concepts"
+    },
+    {
+      "id": "ddia22",
+      "query": "write-ahead log WAL crash recovery durability storage",
+      "expected_sections": ["Chapter 3. Storage and Retrieval", "Chapter 7. Transactions"],
+      "notes": "WAL appears in both storage and transaction chapters"
+    },
+    {
+      "id": "ddia23",
+      "query": "eventual consistency BASE properties distributed databases",
+      "expected_sections": ["Chapter 5. Replication", "Chapter 9. Consistency and Consensus"],
+      "notes": "Eventual consistency concepts"
+    },
+    {
+      "id": "ddia24",
+      "query": "secondary indexes local global partitioned index scatter gather",
+      "expected_sections": ["Chapter 6. Partitioning"],
+      "notes": "Secondary index partitioning strategies"
+    },
+    {
+      "id": "ddia25",
+      "query": "future of data systems combining tools unbundling database",
+      "expected_sections": ["Chapter 12. The Future of Data Systems"],
+      "notes": "Concluding chapter on composing data systems"
+    }
+  ]
+}

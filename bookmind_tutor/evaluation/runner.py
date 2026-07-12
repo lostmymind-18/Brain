@@ -154,6 +154,11 @@ class EvalRunner:
         for config in configs:
             agent = self._build_agent(config)
             for q in questions:
+                # Reset memory between questions so each runs as a fresh single-turn
+                # interaction. Without this, question N sees the full conversation
+                # history of questions 0..N-1, contaminating scores and making
+                # results order-dependent.
+                agent.reset_memory()
                 row = self._run_one(q, config, agent, book_name)
                 report.rows.append(row)
 

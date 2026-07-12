@@ -84,6 +84,46 @@ Not urgent: same caveat as above.
 
 ---
 
+### Wrapper TOC node ("Contents") swallows the whole book hierarchy
+
+**File:** `bookmind_tutor/ingestion/structure_detector.py` - `_build_tree_from_toc()`
+
+Found 2026-07-11 while investigating a verbatim-quote failure with "The Beginning of Infinity".
+This book's embedded TOC nests every chapter under a level-1 "Contents" entry
+(top level: Cover Page, Title Page, Contents, Copyright Page).
+Result: `chapter = "Contents"` for 1749/1758 chunks, real chapter titles land in `section`,
+and the whole hierarchy is shifted one level down.
+
+Consequences:
+- The contextual-embedding breadcrumb wastes budget on the meaningless word "Contents" in every chunk.
+- `book_outline` renders one giant chapter, hiding the real structure.
+- Source labels read `Contents / 4: Creation / ...`, which confuses both the LLM and the user.
+
+Approach: after building the tree from TOC, detect wrapper nodes whose title normalizes to
+a known front-matter name ("contents", "table of contents", "toc") and that contain most of
+the book's children - then promote the children one level up.
+Sibling front-matter leaves (Cover Page, Copyright Page) stay as-is.
+
+---
+
+### Reconciler TOC filter misses numbering variants, injects duplicate subsections
+
+**File:** `bookmind_tutor/ingestion/structure_reconciler.py` - TOC exclusion filter
+
+Same book as above: the TOC lists `"4: Creation"` but the body heading is `"Creation"`.
+`normalize_heading("4: Creation")` != `normalize_heading("Creation")`,
+so the reconciler treated the body chapter heading as a NEW sub-heading candidate
+and injected a subsection that duplicates its own chapter
+(`section = "4: Creation"`, `subsection = "Creation"` - observed on 17 chapters).
+
+Approach: when checking a candidate against the TOC set, also compare
+numbering-stripped forms (drop leading `\d+[.:]?` and trailing page numbers before comparing).
+A candidate matching any TOC entry in either form is structure already known, not a new sub-heading.
+Note: keep the comparison conservative - stripping too aggressively could merge
+genuinely different headings like "1: Introduction" and "2: Introduction" in appendix quizzes.
+
+---
+
 ## Week 3 - Reasoning Strategies
 
 ### StrategyRouter: heuristic routing có thể sai với câu hỏi mơ hồ
@@ -179,6 +219,37 @@ Proposed fix (two independent parts):
 - **Relevance threshold in `BookSearchTool`** (secondary): when the best distance is above a cutoff, prepend a warning like "results may be irrelevant" or return "no relevant passages found", so the model degrades honestly instead of hallucinating.
 
 Status: root cause confirmed, fix not yet implemented. Related earlier fix: tool descriptions now instruct the model to always search in English (Vietnamese queries against English embeddings made retrieval strictly worse).
+
+---
+
+### ~~Verbatim-quote requests are not grounded; weak models skip re-search entirely~~ (system prompt fixed; model-choice recommendation documented)
+
+**Files:** `bookmind_tutor/agents/harness.py` (`_DEFAULT_SYSTEM`), `.env` (model choice)
+
+Found 2026-07-11: user asked for the author's exact wording behind one point of a
+book summary ("The Beginning of Infinity", gpt-4o-mini) and the agent failed three turns in a row.
+Verified from `data/interactions.jsonl`:
+
+1. The summary turn itself ran 1 LLM call with 0 retrievals - the "insight" the user
+   wanted quoted was the model's own synthesis, not a paraphrase of any passage.
+   The model never disclosed that.
+2. The verbatim turn retrieved exactly 1 chunk (an unrelated William Paley quote) and gave up.
+3. The two follow-up nudges ("sao không lấy được nguyên văn?", "trong cùng một chương đó mà")
+   ran 0 retrievals each - the model apologized or re-summarized from context instead of
+   calling `get_book_section("Creation")`, which would have returned the full chapter text.
+
+Direct retrieval tests confirm the index could serve the request
+(e.g. "good explanations hard to vary" hits Chapter 13 at 0.756), so the failure is
+agent behavior, not pipeline capability.
+
+Two-part approach:
+- **System prompt:** add an explicit rule for quote requests - when the user asks for
+  exact/verbatim text, ALWAYS call search or get_book_section first and quote only text
+  that appears in the returned excerpts; if the statement being asked about was the
+  model's own synthesis, say so explicitly before offering the closest real passages.
+- **Model choice:** gpt-4o-mini repeatedly stops using tools once a first attempt fails;
+  claude-haiku-4-5 with the same harness re-searches. Recommend switching `.env` back to
+  the Anthropic provider for real usage, and treat gpt-4o-mini as a budget/stress-test config.
 
 ---
 
@@ -291,16 +362,16 @@ numbers: contextual embeddings alone -35% retrieval failures, + contextual BM25 
 
 Six gaps, ordered by recommended implementation sequence:
 
-1. **Retrieval eval set (do FIRST - everything else needs it to be measurable).**
-   ~20-30 queries per book with expected section/subsection answers.
-   Measure recall@k / labeled-hit rate like Anthropic's failure-rate metric.
-   Current 5-query ad-hoc spot-check cannot tell whether a change helps.
+1. ~~**Retrieval eval set (do FIRST - everything else needs it to be measurable).**~~
+   ~~20-30 queries per book with expected section/subsection answers.~~
+   ~~Measure recall@k / labeled-hit rate like Anthropic's failure-rate metric.~~
+   **Done 2026-07-12.** `data/eval/` contains 3 JSON sets (Deutsch 22q, FoSA 22q, DDIA 25q).
+   Script: `scripts/eval_retrieval.py`. Baselines: Deutsch@5=82%, FoSA@5=91%, DDIA@5=100%.
 
-2. **RRF (Reciprocal Rank Fusion) instead of max-norm alpha blend.**
-   `vector_store.py _search_hybrid()` normalizes BM25 by max score in candidate set,
-   so the top BM25 doc always gets 1.0 -> hybrid 0.500 even when dense disagrees.
-   Fingerprint observed: exactly-0.500 scores at k=1 with irrelevant results.
-   RRF is scale-free and k-independent. Nearly free to implement.
+2. ~~**RRF (Reciprocal Rank Fusion) instead of max-norm alpha blend.**~~
+   ~~`vector_store.py _search_hybrid()` normalizes BM25 by max score in candidate set,~~
+   ~~so the top BM25 doc always gets 1.0 -> hybrid 0.500 even when dense disagrees.~~
+   **Done 2026-07-12.** `1/(60+rank_dense) + 1/(60+rank_bm25)`. See PROGRESS.md.
 
 3. **Cross-encoder reranker (biggest measured win in Anthropic's data: 49% -> 67%).**
    No API needed: local `cross-encoder/ms-marco-MiniLM-L-6-v2` via sentence-transformers.
@@ -324,6 +395,90 @@ Honest caveat from the article, worth knowing for interviews: for knowledge base
 under ~200k tokens (~500 pages), long-context + prompt caching beats RAG entirely.
 DDIA is safely above the threshold; FoSA is borderline. For this learning project,
 RAG remains the right choice by objective.
+
+---
+
+### ~~EvalRunner: conversation memory bleeds across benchmark questions~~ (fixed)
+
+**File:** `bookmind_tutor/evaluation/runner.py` - `run()` (lines 154-157)
+
+Found 2026-07-11 while auditing eval harness capabilities.
+`run()` builds ONE QAAgent per config and reuses it for every question,
+but `QAAgent` creates its `ConversationMemory` at init and passes it into every `chat()` call.
+Result: question 10 in a benchmark sees the full conversation of questions 1-9.
+
+Consequences for single-turn benchmarking:
+- Scores are contaminated by unrelated prior context (student-level inference,
+  strategy routing, and answer content all read the accumulated history).
+- Question ORDER affects results, so runs are not comparable across question-set edits.
+
+Fix for the current single-turn design: rebuild the agent (or call a memory reset)
+per question inside the inner loop.
+Design note for the planned multi-turn agent-behavior eval set: the memory mechanism
+is exactly what multi-turn scenarios need - the fix should make memory lifetime
+EXPLICIT (fresh per question in single-turn mode, fresh per scenario and shared
+within it in multi-turn mode), not simply always-reset.
+
+Related harness gaps recorded in the "Agent behavior eval set" entry below:
+no multi-turn scenario support, no programmatic assertion layer,
+no baseline/pass-fail gating, no retrieval-only mode.
+
+---
+
+### Agent behavior eval set distilled from real interaction history (planned)
+
+**Files:** `data/interactions.jsonl` (source material), `bookmind_tutor/evaluation/` (existing infra)
+**Relation to the retrieval eval set (item 1 above):** complementary, not overlapping.
+The retrieval set measures the PIPELINE (single query -> did the right section surface).
+This set measures the AGENT (multi-turn conversation -> did it behave correctly end-to-end).
+Four of the five observed failure patterns cannot be expressed as single-query retrieval tests.
+
+**Status 2026-07-11:** does not exist yet.
+`data/eval_questions.example.json` is a 3-question placeholder template;
+no real question set has ever been written for any book.
+The Week 7 EvalRunner infra (LLM-as-judge, multi-config, hallucination_score) works
+but has never been fed realistic questions.
+
+**Harness gaps (audited 2026-07-11):** the existing EvalRunner supports single-turn
+benchmarking only. Missing for the two planned eval sets:
+1. Multi-turn scenario support (scripted user turns referencing the agent's prior output).
+2. A programmatic assertion layer (raw signals exist in the trace - `num_llm_calls`,
+   `retrieved_chunks` - but there is nowhere to declare per-scenario checks).
+3. Baseline comparison / pass-fail gating (reports produce means, never "regressed vs last run").
+4. A retrieval-only mode for the recall@k set (runner always builds full QAAgent + judge -
+   expensive, and judge-score variance drowns the retrieval signal).
+Also see the memory-bleed bug entry above - its fix should introduce explicit
+memory-lifetime control, which multi-turn scenarios will reuse.
+
+**Source material:** 68 real interactions logged in `data/interactions.jsonl`,
+including every investigated failure case (hallucinated chapter list, appendix quiz page p.395,
+the verbatim-quote 3-turn failure with "The Beginning of Infinity").
+Real usage questions expose weaknesses that invented benchmark questions do not.
+
+**Failure patterns to cover (all observed in real sessions):**
+1. Verbatim-quote requests referencing the assistant's own earlier summary -
+   forces the agent to distinguish "what the book says" from "what I synthesized".
+2. Challenge follow-ups ("sao bạn không lấy được?", "trong cùng một chương đó mà") -
+   measures whether the agent re-searches instead of apologizing from context.
+3. Global aggregation ("tổng kết insights", "có những chương nào trong mỗi phần?") -
+   chunk RAG is structurally blind to these; book_outline must be used.
+4. Vague conversational continuations ("sự phát triển tri thức đi", "sang chương 4 đi") -
+   depends on conversation context being carried into tool queries.
+5. Vietnamese questions against English embeddings.
+
+**Approach:**
+- Distill each pattern into 3-5 multi-turn scenarios per book
+  (scripted user turns; some turns must reference the agent's previous output).
+- Grade with LLM-as-judge using per-scenario rubrics
+  (e.g. for pattern 2: "did the agent call a retrieval tool after the challenge?" -
+  checkable from num_llm_calls / retrieved_chunks in the interaction log, no judge needed).
+- Prefer programmatic checks (tool-call counts, retrieval counts, quoted-text-appears-in-chunk)
+  over judge scores wherever possible - they are cheaper and not gameable.
+- Run as a regression suite before/after every agent-affecting change
+  (model swap, system prompt edit, RRF, reranker) so old failures cannot silently return.
+
+Depends on: nothing (can be built now). The retrieval eval set (item 1) remains
+first for the retrieval upgrades; this set gates agent/prompt/model changes instead.
 
 ---
 

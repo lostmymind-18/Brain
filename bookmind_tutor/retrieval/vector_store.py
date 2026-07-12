@@ -173,40 +173,44 @@ class VectorStore:
 
     def _search_hybrid(self, query: str, k: int, alpha: float, bm25) -> list[SearchResult]:
         """
-        Fused BM25 + dense search using Reciprocal Rank Fusion-style score combination.
+        Fused BM25 + dense search using Reciprocal Rank Fusion (RRF).
 
-        Fetches k*3 candidates from each source, then merges and re-ranks.
-        BM25 excels at exact-term/proper-noun matches; dense covers semantic paraphrases.
+        RRF score: 1/(rrf_k + rank_dense) + 1/(rrf_k + rank_bm25)
+        rrf_k=60 is the standard constant from Cormack et al. 2009.
+
+        Advantages over the previous max-norm alpha blend:
+        - Scale-free: BM25 raw scores are not comparable to cosine similarities,
+          so normalizing by max-score made the top BM25 doc always dominate.
+          (Fingerprint of the old bug: exactly-0.500 hybrid score when BM25 ranked
+          a doc first but dense did not surface it at all.)
+        - k-independent: RRF rank is stable regardless of how many candidates
+          are fetched; alpha blend depended on the distribution of the candidate set.
+
+        The alpha parameter is kept in the signature for API compatibility but is
+        no longer used in fusion. It may be repurposed later (e.g. to weight the
+        two rank lists differently via 1/(rrf_k + rank_dense) * alpha).
         """
         total = self.count()
         n_candidates = min(k * 3, total)
+        rrf_k = 60  # standard Cormack et al. 2009 constant
 
         # --- Dense candidates ---
         dense_result = self._collection.query(query_texts=[query], n_results=n_candidates)
         dense_ids = dense_result["ids"][0]
-        dense_scores: dict[str, float] = {
-            cid: 1.0 - dist
-            for cid, dist in zip(dense_ids, dense_result["distances"][0])
-        }
+        # rank is 0-based; lower rank = better
+        dense_rank: dict[str, int] = {cid: rank for rank, cid in enumerate(dense_ids)}
         doc_map: dict[str, str] = dict(zip(dense_ids, dense_result["documents"][0]))
         meta_map: dict[str, dict] = dict(zip(dense_ids, dense_result["metadatas"][0]))
 
         # --- BM25 candidates ---
         raw_scores = bm25.get_scores(query.lower().split())
-        max_s = float(max(raw_scores)) if len(raw_scores) > 0 else 0.0
-        if max_s > 0:
-            normalized = [float(s) / max_s for s in raw_scores]
-        else:
-            normalized = [0.0] * len(raw_scores)
-
-        # Take top n_candidates from BM25 by descending score
-        top_indices = sorted(range(len(normalized)), key=lambda i: normalized[i], reverse=True)[:n_candidates]
-        bm25_scores: dict[str, float] = {
-            self._bm25_ids[i]: normalized[i] for i in top_indices
+        top_indices = sorted(range(len(raw_scores)), key=lambda i: raw_scores[i], reverse=True)[:n_candidates]
+        bm25_rank: dict[str, int] = {
+            self._bm25_ids[i]: rank for rank, i in enumerate(top_indices)
         }
 
         # Fetch docs/metas for BM25 candidates not already in dense results
-        missing = [cid for cid in bm25_scores if cid not in doc_map]
+        missing = [cid for cid in bm25_rank if cid not in doc_map]
         if missing:
             fetched = self._collection.get(ids=missing, include=["documents", "metadatas"])
             for cid, doc, meta in zip(
@@ -215,13 +219,14 @@ class VectorStore:
                 doc_map[cid] = doc
                 meta_map[cid] = meta
 
-        # --- Fuse scores ---
-        all_ids = set(dense_scores.keys()) | set(bm25_scores.keys())
+        # --- RRF fusion ---
+        all_ids = set(dense_rank.keys()) | set(bm25_rank.keys())
         results: list[SearchResult] = []
         for cid in all_ids:
-            d = dense_scores.get(cid, 0.0)
-            b = bm25_scores.get(cid, 0.0)
-            hybrid = alpha * d + (1.0 - alpha) * b
+            # Docs absent from one list get rank = n_candidates (worst possible)
+            dr = dense_rank.get(cid, n_candidates)
+            br = bm25_rank.get(cid, n_candidates)
+            rrf_score = 1.0 / (rrf_k + dr) + 1.0 / (rrf_k + br)
             meta = meta_map.get(cid, {})
             results.append(SearchResult(
                 chunk_id=cid,
@@ -229,7 +234,7 @@ class VectorStore:
                 chapter=meta.get("chapter") or None,
                 section=meta.get("section") or None,
                 page_range=(meta.get("page_start", 0), meta.get("page_end", 0)),
-                score=hybrid,
+                score=rrf_score,
                 subsection=meta.get("subsection") or None,
             ))
 

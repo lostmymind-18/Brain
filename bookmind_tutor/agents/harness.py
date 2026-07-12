@@ -44,7 +44,15 @@ _DEFAULT_SYSTEM = (
     "author arguments, specific examples — must appear in the retrieved excerpts or "
     "book_outline output. Never use your training knowledge to fill gaps. "
     "If the search results do not contain enough information to answer confidently, "
-    "say 'I could not find this in the book' rather than guessing or fabricating details."
+    "say 'I could not find this in the book' rather than guessing or fabricating details. "
+    "VERBATIM QUOTE RULE: When the user asks for an exact quote, the author's exact words, "
+    "or the original text (e.g. 'nguyên văn', 'trích dẫn', 'exact words', 'quote'), "
+    "you MUST call get_book_section or book_search FIRST and quote ONLY text that appears "
+    "word-for-word in the returned excerpts. "
+    "If the statement being asked about was a synthesis or summary you wrote earlier "
+    "(not a direct quote from retrieval), say so explicitly: "
+    "'That was my synthesis — let me find the closest passages the author actually wrote.' "
+    "Then search and present the real passages."
 )
 
 _MAX_ITERATIONS_FALLBACK = (

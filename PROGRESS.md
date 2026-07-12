@@ -4,6 +4,50 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## Retrieval eval set + RRF + eval harness fixes - complete
+
+Ref: backlog.md "Retrieval upgrades toward full contextual retrieval" (items 1-2),
+"EvalRunner: conversation memory bleeds", "Verbatim-quote requests not grounded".
+
+### Retrieval eval set (`data/eval/`)
+Three ground-truth query sets (~22-25 queries each):
+- `data/eval/deutsch_retrieval.json` - "The Beginning of Infinity"
+- `data/eval/fosa_retrieval.json` - "Fundamentals of Software Architecture"
+- `data/eval/ddia_retrieval.json` - "Designing Data-Intensive Applications"
+Each query has `expected_sections` (list; any hit counts) derived from book content.
+Measurement script: `scripts/eval_retrieval.py` - recall@k with section-name
+normalization, verbose per-query output, miss report.
+
+Baseline recall (RRF, k=5/k=10):
+- Deutsch: @1=68%, @5=82%, @10=91% (18 chapters, some concepts span multiple)
+- FoSA: @1=82%, @5=91%, @10=95% (1 miss: soft-skills chapter hits Introduction)
+- DDIA: @1=92%, @5=100%, @10=100%
+
+### RRF - Reciprocal Rank Fusion (`retrieval/vector_store.py`)
+Replaced the max-norm alpha-blend with true RRF:
+`score = 1/(60 + dense_rank) + 1/(60 + bm25_rank)` (Cormack et al. 2009).
+The old bug: BM25 max-norm made the top BM25 doc always score 1.0, so
+hybrid = exactly 0.500 (with alpha=0.5) whenever BM25 ranked something first
+but dense did not. RRF is scale-free and rank-stable regardless of candidate set size.
+Score range is now ~0.016-0.034 (interpretable as rank positions), not 0-1.
+
+### Eval harness fixes (`evaluation/runner.py`, `tutor/qa_agent.py`)
+- `QAAgent.reset_memory()` added - clears `ConversationMemory` and `_turn_count`.
+- `EvalRunner.run()` calls `agent.reset_memory()` before each question: fixes the
+  memory-bleed contamination bug (question N saw full history of questions 0..N-1).
+
+### System prompt verbatim-quote rule (`agents/harness.py`)
+Added explicit rule to `_DEFAULT_SYSTEM`: when user asks for exact/verbatim text
+("nguyên văn", "trích dẫn", "exact words", "quote"), always search first and quote
+only text in returned excerpts; if the statement was a synthesis, say so explicitly.
+Addresses the 3-turn failure observed with "The Beginning of Infinity".
+
+### Books re-indexed
+FoSA: 1070 chunks, DDIA: 2136 chunks (contextual embeddings, max_tokens=160).
+386 tests passing.
+
+---
+
 ## Search layer subsection support + contextual embedding - complete
 
 Follow-up to the structure reconciler: the search layer did not exploit the new

@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "book_id": "david_deutsch_the_beginning_of_infinity",
+  "book_name": "The Beginning of Infinity - David Deutsch",
+  "queries": [
+    {
+      "id": "d01",
+      "query": "good explanations are hard to vary without losing their explanatory power",
+      "expected_sections": ["1: The Reach of Explanations", "13: Choices"],
+      "notes": "Core thesis of the book; appears in multiple chapters"
+    },
+    {
+      "id": "d02",
+      "query": "empiricism fallibilism Popper conjecture refutation",
+      "expected_sections": ["1: The Reach of Explanations"],
+      "notes": "Chapter 1 establishes the epistemological foundation"
+    },
+    {
+      "id": "d03",
+      "query": "parochialism ancient Athenians could not conceive of progress",
+      "expected_sections": ["3: The Spark"],
+      "notes": "The Spark chapter contrasts static vs dynamic societies"
+    },
+    {
+      "id": "d04",
+      "query": "dynamic societies that welcome change and criticism",
+      "expected_sections": ["3: The Spark"],
+      "notes": "Static vs dynamic society distinction"
+    },
+    {
+      "id": "d05",
+      "query": "evolution knowledge genes adaptation design without designer",
+      "expected_sections": ["4: Creation"],
+      "notes": "Chapter 4 parallels biological evolution and knowledge creation"
+    },
+    {
+      "id": "d06",
+      "query": "creationism cannot explain origin of the knowledge in adaptations",
+      "expected_sections": ["4: Creation"],
+      "notes": "Deutsch's critique of creationism in Chapter 4"
+    },
+    {
+      "id": "d07",
+      "query": "abstract entities numbers laws of nature real or not",
+      "expected_sections": ["5: The Reality of Abstractions"],
+      "notes": "Chapter 5 argues abstract entities are as real as physical ones"
+    },
+    {
+      "id": "d08",
+      "query": "universality Turing universal computation replication",
+      "expected_sections": ["6: The Jump to Universality"],
+      "notes": "Jump to universality concept - DNA, writing, numbers"
+    },
+    {
+      "id": "d09",
+      "query": "artificial creativity Turing test narrow AI imitation",
+      "expected_sections": ["7: Artificial Creativity"],
+      "notes": "Chapter 7 on AI and creativity"
+    },
+    {
+      "id": "d10",
+      "query": "infinity Cantor diagonal argument different sizes of infinity",
+      "expected_sections": ["8: A Window on Infinity"],
+      "notes": "Chapter 8 on mathematical infinity"
+    },
+    {
+      "id": "d11",
+      "query": "optimism problems are soluble knowledge is the key resource",
+      "expected_sections": ["9: Optimism"],
+      "notes": "Deutsch's rational optimism thesis"
+    },
+    {
+      "id": "d12",
+      "query": "Socrates dialogue Athenian democracy jury trial",
+      "expected_sections": ["10: A Dream of Socrates"],
+      "notes": "Imagined Socratic dialogue about democracy and knowledge"
+    },
+    {
+      "id": "d13",
+      "query": "many worlds interpretation quantum mechanics Everett branches",
+      "expected_sections": ["11: The Multiverse"],
+      "notes": "Chapter 11 defends the many-worlds interpretation"
+    },
+    {
+      "id": "d14",
+      "query": "bad philosophy positivism logical empiricism Vienna Circle",
+      "expected_sections": ["12: A Physicist's History of Bad Philosophy"],
+      "notes": "Critique of anti-realist philosophy of science"
+    },
+    {
+      "id": "d15",
+      "query": "free will choice moral responsibility creativity",
+      "expected_sections": ["13: Choices"],
+      "notes": "Chapter 13 on choice and creativity"
+    },
+    {
+      "id": "d16",
+      "query": "flowers beautiful aesthetic evolution pollination bees",
+      "expected_sections": ["14: Why are Flowers Beautiful?"],
+      "notes": "Chapter 14 on objective beauty and co-evolution"
+    },
+    {
+      "id": "d17",
+      "query": "memes cultural evolution ideas spread imitation",
+      "expected_sections": ["15: The Evolution of Culture"],
+      "notes": "Chapter 15 on memes and cultural evolution"
+    },
+    {
+      "id": "d18",
+      "query": "creativity evolution analogy variation selection ideas",
+      "expected_sections": ["16: The Evolution of Creativity"],
+      "notes": "Chapter 16 deepens the evolution-knowledge analogy"
+    },
+    {
+      "id": "d19",
+      "query": "sustainability unsustainable growth resources limits to growth",
+      "expected_sections": ["17: Unsustainable"],
+      "notes": "Chapter 17 critiques sustainability ideology"
+    },
+    {
+      "id": "d20",
+      "query": "humans unique cosmic significance knowledge creation in the universe",
+      "expected_sections": ["18: The Beginning", "9: Optimism"],
+      "notes": "The final chapter's thesis about humans as beginning of infinity"
+    },
+    {
+      "id": "d21",
+      "query": "closer to reality naked eye versus telescope microscope perception",
+      "expected_sections": ["2: Closer to Reality"],
+      "notes": "Chapter 2 argues instruments bring us closer to reality, not further"
+    },
+    {
+      "id": "d22",
+      "query": "elegance testability criterion good explanation hard to vary",
+      "expected_sections": ["1: The Reach of Explanations", "13: Choices"],
+      "notes": "Distinguishing good from bad explanations"
+    }
+  ]
+}

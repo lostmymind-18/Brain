@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "book_id": "fundamental_of_software_architecture",
+  "book_name": "Fundamentals of Software Architecture - Richards & Ford",
+  "notes": "Section names use the book's actual chapter labels after indexing. Verify with book_outline before running.",
+  "queries": [
+    {
+      "id": "f01",
+      "query": "architecture characteristics availability scalability elasticity",
+      "expected_sections": ["Chapter 4. Architecture Characteristics Defined"],
+      "notes": "Core vocabulary chapter"
+    },
+    {
+      "id": "f02",
+      "query": "fitness functions evolutionary architecture governance automation",
+      "expected_sections": ["Chapter 6. Measuring and Governing Architecture Characteristics"],
+      "notes": "Fitness functions are a key FoSA concept; was previously retrieved from appendix quiz"
+    },
+    {
+      "id": "f03",
+      "query": "layered architecture n-tier presentation business persistence",
+      "expected_sections": ["Chapter 10. Layered Architecture Style"],
+      "notes": "Classic layered architecture pattern"
+    },
+    {
+      "id": "f04",
+      "query": "pipeline architecture filter transformer producer consumer",
+      "expected_sections": ["Chapter 11. Pipeline Architecture Style"],
+      "notes": "Pipeline / filter pattern"
+    },
+    {
+      "id": "f05",
+      "query": "microkernel architecture plugin extensibility core system",
+      "expected_sections": ["Chapter 12. Microkernel Architecture Style"],
+      "notes": "Plugin-based architecture"
+    },
+    {
+      "id": "f06",
+      "query": "service-based architecture coarse-grained services shared database",
+      "expected_sections": ["Chapter 13. Service-Based Architecture Style"],
+      "notes": "Between monolith and microservices"
+    },
+    {
+      "id": "f07",
+      "query": "event-driven architecture mediator broker topology async",
+      "expected_sections": ["Chapter 14. Event-Driven Architecture Style"],
+      "notes": "Broker vs mediator topology distinction"
+    },
+    {
+      "id": "f08",
+      "query": "broker topology choreography no central orchestrator",
+      "expected_sections": ["Chapter 14. Event-Driven Architecture Style"],
+      "notes": "Subsection-level test: broker vs mediator"
+    },
+    {
+      "id": "f09",
+      "query": "space-based architecture tuple space data grid in-memory",
+      "expected_sections": ["Chapter 15. Space-Based Architecture Style"],
+      "notes": "Less common but memorable pattern"
+    },
+    {
+      "id": "f10",
+      "query": "microservices bounded context domain-driven design service granularity",
+      "expected_sections": ["Chapter 17. Microservices Architecture"],
+      "notes": "Microservices is the most asked-about pattern in interviews"
+    },
+    {
+      "id": "f11",
+      "query": "architecture decision records ADR documenting decisions",
+      "expected_sections": ["Chapter 19. Architecture Decisions"],
+      "notes": "ADRs - important practical tool"
+    },
+    {
+      "id": "f12",
+      "query": "risk storming risk matrix likelihood impact architecture",
+      "expected_sections": ["Chapter 20. Analyzing Architecture Risk"],
+      "notes": "Risk Storming technique"
+    },
+    {
+      "id": "f13",
+      "query": "architecture soft skills communication negotiation politics",
+      "expected_sections": ["Chapter 21. Diagramming and Presenting Architecture", "Chapter 22. Making Teams Effective"],
+      "notes": "Soft skills chapters"
+    },
+    {
+      "id": "f14",
+      "query": "coupling afferent efferent abstractness instability metrics",
+      "expected_sections": ["Chapter 3. Modularity"],
+      "notes": "Coupling metrics - technical depth"
+    },
+    {
+      "id": "f15",
+      "query": "connascence static dynamic strength degree locality",
+      "expected_sections": ["Chapter 3. Modularity"],
+      "notes": "Connascence is a deeper coupling concept from Chapter 3"
+    },
+    {
+      "id": "f16",
+      "query": "role of software architect expectations responsibilities",
+      "expected_sections": ["Chapter 1. Introduction"],
+      "notes": "Chapter 1 defines what an architect does"
+    },
+    {
+      "id": "f17",
+      "query": "architecture versus design continuum technical decisions",
+      "expected_sections": ["Chapter 1. Introduction", "Chapter 2. Architectural Thinking"],
+      "notes": "Architecture vs design boundary"
+    },
+    {
+      "id": "f18",
+      "query": "orchestrated saga choreography distributed transactions",
+      "expected_sections": ["Chapter 17. Microservices Architecture"],
+      "notes": "Saga pattern is a key distributed systems concept in Chapter 17"
+    },
+    {
+      "id": "f19",
+      "query": "monolithic versus distributed architecture fallacies network",
+      "expected_sections": ["Chapter 9. Foundations"],
+      "notes": "Eight fallacies of distributed computing context"
+    },
+    {
+      "id": "f20",
+      "query": "component design granularity coupling cohesion entity trap",
+      "expected_sections": ["Chapter 8. Component-Based Thinking"],
+      "notes": "Component design anti-patterns"
+    },
+    {
+      "id": "f21",
+      "query": "quantum architecture style hybrid combination patterns",
+      "expected_sections": ["Chapter 18. Choosing the Appropriate Architecture Style"],
+      "notes": "Choosing between styles - decision framework"
+    },
+    {
+      "id": "f22",
+      "query": "technical breadth versus depth frozen cavern architect",
+      "expected_sections": ["Chapter 2. Architectural Thinking"],
+      "notes": "Frozen cavern / unknown unknowns mental model from Chapter 2"
+    }
+  ]
+}

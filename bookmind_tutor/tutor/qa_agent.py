@@ -203,6 +203,11 @@ class QAAgent:
     def last_trace(self) -> ReasoningTrace | None:
         return self._router.last_trace
 
+    def reset_memory(self) -> None:
+        """Clear conversation history. Used by EvalRunner between benchmark questions."""
+        self._memory.clear()
+        self._turn_count = 0
+
     def seed_memory(self, messages: list[dict]) -> None:
         """
         Replay persisted UI messages into the agent's ConversationMemory.
