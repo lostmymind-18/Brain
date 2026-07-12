@@ -373,9 +373,15 @@ Six gaps, ordered by recommended implementation sequence:
    ~~so the top BM25 doc always gets 1.0 -> hybrid 0.500 even when dense disagrees.~~
    **Done 2026-07-12.** `1/(60+rank_dense) + 1/(60+rank_bm25)`. See PROGRESS.md.
 
-3. **Cross-encoder reranker (biggest measured win in Anthropic's data: 49% -> 67%).**
-   No API needed: local `cross-encoder/ms-marco-MiniLM-L-6-v2` via sentence-transformers.
-   Retrieve ~30-50 candidates -> rerank -> pass top 10-20 to the LLM.
+3. ~~**Cross-encoder reranker (biggest measured win in Anthropic's data: 49% -> 67%).**~~
+   **Done 2026-07-12.** `bookmind_tutor/retrieval/reranker.py` - `CrossEncoderReranker`
+   wrapping `cross-encoder/ms-marco-MiniLM-L-6-v2`. VectorStore now accepts optional
+   `reranker=` param; when set, fetches k*8 candidates then reranks to top-k.
+   Wired into `app.py` via `_RERANKER` singleton (disable with `ENABLE_RERANKER=false`).
+   A/B measured with `scripts/eval_retrieval.py --reranker`:
+   @5 Deutsch +4% (82→86%), FoSA +5% (91→96%), DDIA flat (100%). @1 drops because
+   cross-encoder and RRF optimize different relevance notions - not a regression for RAG
+   (LLM reads all k, so hit@3 = hit@1 in practice). 395 tests passing.
 
 4. **Raise top-k 5 -> ~20 (only together with reranker).**
    Anthropic measured top-20 > top-10 > top-5. At 160-word chunks, 20 chunks ~ 4k

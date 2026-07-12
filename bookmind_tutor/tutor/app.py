@@ -65,7 +65,16 @@ from bookmind_tutor.tutor.qa_agent import QAAgent
 from bookmind_tutor.knowledge_graph.graph_store import GraphStore
 from bookmind_tutor.knowledge_graph.suggester import KGUpdateSuggester
 from bookmind_tutor.retrieval.indexer import ChunkIndexer
+from bookmind_tutor.retrieval.reranker import CrossEncoderReranker
 from bookmind_tutor.retrieval.vector_store import VectorStore
+
+# Shared reranker instance — model is lazy-loaded on the first search.
+# Set ENABLE_RERANKER=false to disable (falls back to RRF-only retrieval).
+_RERANKER: CrossEncoderReranker | None = (
+    CrossEncoderReranker()
+    if os.getenv("ENABLE_RERANKER", "true").lower() not in ("false", "0", "no")
+    else None
+)
 
 _NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 _NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
@@ -238,7 +247,7 @@ def _restore_from_disk() -> None:
     stale: list[str] = []
 
     for bid, record in saved.items():
-        vs = VectorStore(persist_dir=_CHROMA_DIR, collection_name=f"book_{bid}")
+        vs = VectorStore(persist_dir=_CHROMA_DIR, collection_name=f"book_{bid}", reranker=_RERANKER)
         if vs.count() == 0:
             stale.append(record.name)
             continue
@@ -329,6 +338,7 @@ def _upload_page() -> None:
                     vs = VectorStore(
                         persist_dir=_CHROMA_DIR,
                         collection_name=f"book_{bid}",
+                        reranker=_RERANKER,
                     )
                     indexer = ChunkIndexer(
                         vector_store=vs,

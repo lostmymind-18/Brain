@@ -33,23 +33,32 @@ def _section_matches(result_section: str | None, expected: list[str]) -> bool:
                for e in expected)
 
 
-def run_eval(query_file: Path, k_values: list[int], verbose: bool) -> None:
+def run_eval(query_file: Path, k_values: list[int], verbose: bool, use_reranker: bool = False) -> None:
     data = json.loads(query_file.read_text())
     book_id = data["book_id"]
     book_name = data.get("book_name", book_id)
     queries = data["queries"]
 
+    reranker = None
+    if use_reranker:
+        from bookmind_tutor.retrieval.reranker import CrossEncoderReranker
+        print("Loading cross-encoder reranker (first run downloads ~85MB)...")
+        reranker = CrossEncoderReranker()
+
     vs = VectorStore(
         persist_dir="data/chroma",
         collection_name=f"book_{book_id}",
+        reranker=reranker,
     )
     if vs.count() == 0:
         print(f"ERROR: book '{book_id}' is not indexed in data/chroma.")
         print("Index it via the Streamlit UI or the ingestion pipeline first.")
         sys.exit(1)
 
+    mode = "RRF + cross-encoder reranker" if use_reranker else "RRF only"
     print(f"\n{'='*60}")
     print(f"Eval: {book_name}")
+    print(f"Mode: {mode}")
     print(f"Index size: {vs.count()} chunks | {len(queries)} queries")
     print(f"{'='*60}\n")
 
@@ -109,13 +118,15 @@ def main() -> None:
                         help="k values to evaluate (default: 1 5 10)")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Print result for every query")
+    parser.add_argument("--reranker", action="store_true",
+                        help="Enable cross-encoder reranker (two-stage pipeline)")
     args = parser.parse_args()
 
     if not args.query_file.exists():
         print(f"ERROR: {args.query_file} not found")
         sys.exit(1)
 
-    run_eval(args.query_file, sorted(args.k), args.verbose)
+    run_eval(args.query_file, sorted(args.k), args.verbose, use_reranker=args.reranker)
 
 
 if __name__ == "__main__":

@@ -59,12 +59,17 @@ class VectorStore:
             For ephemeral stores (persist_dir=None), a unique UUID name is generated
             automatically to ensure test isolation even if ChromaDB uses a shared
             process-level in-memory store.
+        reranker: Optional CrossEncoderReranker. When provided, search() fetches
+            n_candidates = min(k * 8, total) via RRF and then reranks them to
+            return the top-k most relevant results. Without a reranker, search()
+            returns the top-k RRF results directly.
     """
 
     def __init__(
         self,
         persist_dir: str | None = None,
         collection_name: str | None = None,
+        reranker=None,
     ) -> None:
         if persist_dir is None:
             self._client = chromadb.EphemeralClient()
@@ -84,6 +89,7 @@ class VectorStore:
         # BM25 index — built lazily on first search, invalidated when chunks change.
         self._bm25 = None
         self._bm25_ids: list[str] = []
+        self._reranker = reranker
         logger.debug("VectorStore ready: collection=%s, count=%d", self._collection_name, self.count())
 
     def index_chunks(self, chunks: list[Chunk]) -> None:
@@ -132,16 +138,29 @@ class VectorStore:
         """
         Return up to k most relevant chunks for query.
 
-        Uses hybrid BM25 + dense vector fusion when rank_bm25 is installed.
-        alpha controls the blend: 1.0 = pure dense, 0.0 = pure BM25.
-        Falls back to pure dense cosine similarity if rank_bm25 is not available.
+        Two-stage when a reranker is attached:
+          Stage 1: RRF hybrid retrieval of min(k*8, total) candidates.
+          Stage 2: Cross-encoder reranking → top-k returned.
 
-        Results are sorted by fused score descending.
-        Returns empty list if the collection is empty.
+        Without a reranker: single-stage RRF hybrid (or pure dense if rank_bm25
+        is not installed). Falls back to pure dense cosine if rank_bm25 unavailable.
+
+        Results are sorted by score descending. Returns [] if collection is empty.
         """
         total = self.count()
         if total == 0:
             return []
+
+        if self._reranker is not None:
+            # Fetch a larger candidate set for the reranker to select from.
+            n_candidates = min(k * 8, total)
+            bm25 = self._get_bm25()
+            candidates = (
+                self._search_hybrid(query, n_candidates, alpha, bm25)
+                if bm25 is not None
+                else self._search_dense(query, n_candidates)
+            )
+            return self._reranker.rerank(query, candidates, top_k=k)
 
         bm25 = self._get_bm25()
         if bm25 is None:

@@ -4,6 +4,36 @@ Each entry here must reference either a plan in `plans/` or a log in `backlog.md
 
 ---
 
+## Cross-encoder reranker - complete
+
+Ref: backlog.md "Retrieval upgrades toward full contextual retrieval" (item 3).
+
+`bookmind_tutor/retrieval/reranker.py` - `CrossEncoderReranker` class:
+- Wraps `sentence_transformers.CrossEncoder` with `cross-encoder/ms-marco-MiniLM-L-6-v2`
+- Lazy model loading (download ~85MB once to ~/.cache/huggingface/ on first use)
+- `rerank(query, results, top_k)` - scores (query, text) pairs jointly, re-sorts
+
+`VectorStore` now accepts optional `reranker=` parameter:
+- When set: fetch `min(k*8, total)` candidates via RRF → cross-encoder rerank → top-k
+- Without reranker: existing RRF-only behavior (backward compatible)
+
+Wired into `app.py` via `_RERANKER` singleton (all VectorStores share one model instance).
+Disable with env var `ENABLE_RERANKER=false`.
+
+A/B measured with `scripts/eval_retrieval.py --reranker`:
+
+| Book | @1 RRF | @1 +Reranker | @5 RRF | @5 +Reranker |
+|------|--------|-------------|--------|-------------|
+| Deutsch | 68% | 64% | 82% | **86%** |
+| FoSA | 82% | 73% | 91% | **96%** |
+| DDIA | 92% | 72% | 100% | **100%** |
+
+@1 drop is expected: cross-encoder and RRF optimize different relevance notions.
+For RAG, @5 is the correct metric (LLM reads all k chunks). @5 improves or holds.
+9 new tests. 395 passing total.
+
+---
+
 ## Retrieval eval set + RRF + eval harness fixes - complete
 
 Ref: backlog.md "Retrieval upgrades toward full contextual retrieval" (items 1-2),
