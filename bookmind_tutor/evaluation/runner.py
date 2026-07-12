@@ -265,7 +265,7 @@ class EvalRunner:
         retriever = GraphRAGRetriever(
             vector_store=self._vector_store,
             graph_store=self._graph_store,
-            k=5,
+            k=20,
         )
         search_tool = GraphRAGSearchTool(retriever=retriever)
         outline_tool = BookOutlineTool(vector_store=self._vector_store)

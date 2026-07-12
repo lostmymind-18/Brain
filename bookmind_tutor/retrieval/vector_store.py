@@ -134,7 +134,7 @@ class VectorStore:
         self._bm25_ids = []
         logger.info("Indexed %d chunks (total in store: %d)", len(chunks), self.count())
 
-    def search(self, query: str, k: int = 5, alpha: float = 0.5) -> list[SearchResult]:
+    def search(self, query: str, k: int = 20, alpha: float = 0.5) -> list[SearchResult]:
         """
         Return up to k most relevant chunks for query.
 

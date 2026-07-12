@@ -408,7 +408,7 @@ def _setup_agent() -> None:
     retriever = GraphRAGRetriever(
         vector_store=_current_vs(),
         graph_store=st.session_state.graph_store,  # shared user KG
-        k=5,
+        k=20,
     )
     search_tool = GraphRAGSearchTool(retriever=retriever)
     outline_tool = BookOutlineTool(vector_store=_current_vs())

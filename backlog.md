@@ -383,9 +383,10 @@ Six gaps, ordered by recommended implementation sequence:
    cross-encoder and RRF optimize different relevance notions - not a regression for RAG
    (LLM reads all k, so hit@3 = hit@1 in practice). 395 tests passing.
 
-4. **Raise top-k 5 -> ~20 (only together with reranker).**
-   Anthropic measured top-20 > top-10 > top-5. At 160-word chunks, 20 chunks ~ 4k
-   tokens - fits gpt-4o-mini easily. Without reranking, larger k just adds noise.
+4. ~~**Raise top-k 5 -> ~20 (only together with reranker).**~~
+   **Done 2026-07-12.** `VectorStore.search()` default k=5→20, `GraphRAGRetriever`
+   k=5→20 in app.py and runner.py. With reranker: k*8=160 candidates → rerank → top-20.
+   Deutsch @5: 82%→86%, @10: 86% (same), @20: 91% (same ceiling). DDIA/FoSA unchanged.
 
 5. **LLM-generated situating context (the "full" contextual retrieval).**
    Breadcrumb says WHERE the chunk is; LLM context says WHAT it discusses -
